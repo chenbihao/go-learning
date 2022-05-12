@@ -72,7 +72,7 @@
 
   
 
-### 常用配置项
+## 常用配置项
 
 
 
@@ -105,7 +105,7 @@ $Go env -w GOPROXY=https://mirrors.aliyun.com/goproxy/
 
 
 
-### 程序结构
+## 程序结构
 
 
 
@@ -132,7 +132,7 @@ Tips：
 
 复杂项目 build 需要用到 Go module：
 
-```go
+```
 // 初始化 go.mod 文件
 go mod init
 
@@ -145,7 +145,7 @@ go build main.go
 
 
 
-### 项目布局标准
+## 项目布局标准
 
 经典布局
 
@@ -209,7 +209,7 @@ rsc commented on 28 Apr 2021
 
 
 
-### 解决包依赖管理
+## 解决包依赖管理
 
 
 
@@ -217,33 +217,37 @@ rsc commented on 28 Apr 2021
 
 
 
-#### GOPATH（即将废弃）
+### GOPATH（即将废弃）
 
-作用：在本地 GOPATH 环境变量配置路径下寻找依赖的第三方包
+作用：在本地 GOPATH 环境变量配置路径下寻找依赖的第三方包。
 
-Tips：可以使用`go get`命令把缺失的依赖包下载到本地
+Tips：可以使用`go get`命令把缺失的依赖包下载到本地。
 
-缺点：默认没有关注依赖包的版本，导致可能不同时间 get 到的包版本不一样
-
-
-
-#### vendor 机制（1.5 版本引入）
-
-作用：在特定目录`vendor`文件夹下将依赖包缓存起来
-
-Tips：将`vendor`文件夹一起提交到代码仓库中，可以实现可重现的构建
-
-缺点：必须位于本地 GOPATH 环境变量配置路径下的 src 目录下才生效
-
-Tips 2：gb、glide、dep 等第三方工具可实现`vendor`包自动依赖分析和管理，但也有各自的缺点
+缺点：默认没有关注依赖包的版本，导致可能不同时间 get 到的包版本不一样。
 
 
 
-#### Go Module（1.11 版本引入）
+### vendor 机制（1.5 版本引入）
 
-作用：一个 Go Module 顶层目录下回放置一个 go.mod 文件来解决包依赖管理的问题
+作用：在特定目录`vendor`文件夹下将依赖包缓存起来。
 
-go.mod 文件内容说明：
+Tips：将`vendor`文件夹一起提交到代码仓库中，可以实现可重现的构建。
+
+缺点：必须位于本地 GOPATH 环境变量配置路径下的 src 目录下才生效。
+
+Tips 2：gb、glide、dep 等第三方工具可实现`vendor`包自动依赖分析和管理，但也有各自的缺点。
+
+Tips 3：即使有了 Go Module，vendor 也有适用的地方，如在不方便访问外部网络或对构建性能敏感的环境中使用，如 CI/CD 中。
+
+
+
+### Go Module（1.11 版本引入）
+
+作用：一个 Go Module 顶层目录下回放置一个 go.mod 文件来解决包依赖管理的问题。
+
+
+
+go.mod 文件内容：
 
 ```
 module github.com/bigwhite/module-mode 				// 声明 module 路径
@@ -255,8 +259,6 @@ require github.com/sirupsen/logrus v1.8.1			// 依赖信息
 
 
 
-
-
 Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的那个版本的？
 
 
@@ -264,8 +266,6 @@ Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的
 语义版本规范：
 
 ![img](ch0.assets/468323b3294cce2ea7f4c1da3699c5a2.png)
-
-
 
 机制：
 
@@ -280,9 +280,7 @@ Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的
 
 
 
-
-
-#### Go 各版本构建模式机制和切换
+### Go 各版本构建模式机制和切换
 
 ![image-20220511180337754](ch0.assets/image-20220511180337754.png)
 
@@ -290,11 +288,90 @@ Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的
 
 
 
+## Go module 常规操作
+
+
+
+### 添加依赖
+
+1. 代码中 import
+2. go get 或 go mod tidy 命令下载依赖
+
+
+
+### 升 / 降级依赖
+
+- 在 module 根目录下 执行 go get 带依赖版本的命令
+
+- 或使用 go mod edit 修改依赖版本并进行 tidy
+
+```
+go list -m -versions url 		// 查版本
+
+go mod edit -require="github.com/sirupsen/logrus@v1.7.0"	// 手动改 go.mod 也行
+
+go mod tidy
+```
+
+
+
+### 主版本号大于1
+
+
+
+按照语义版本规范，在路径基础上增加版本号信息即可，其他同上，如：
+
+```
+"github.com/go-redis/redis/v7"
+```
+
+
+
+### 升级到不兼容版本
+
+
+
+按照语义版本规范，直接改版本号即可，其他同上，如：
+
+```
+"github.com/go-redis/redis/v8"
+```
+
+
+
+### 移除依赖	
+
+1. 移除 inport
+2. 执行 go mod tidy 命令
+
+
+
+### 特殊情况：使用 vendor
+
+
+
+Go Module 构建模式下无需手动维护 vendor：
+
+1. go mod vendor    // 快速建立和更新 vendor
+
+2. go build -mod=vendor   // 1.14 及后续版本如存在 vendor 目录则自动使用这个模式，除非你手动加 -mod=mod
+
+
+
+```
+vendor
+├── github.com/
+│   ├── ...
+└── modules.txt				// 记录了 vendor 下的 module 与 版本
+```
 
 
 
 
 
+
+
+## 入口函数与包初始化
 
 
 
