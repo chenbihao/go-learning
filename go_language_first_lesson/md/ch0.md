@@ -375,39 +375,74 @@ vendor
 
 
 
+### 初始化顺序
+
+1. import   （深度优先，递归初始化）
+2. const 常量
+3. var 变量
+4. init()  （可以有多个，但不能被显式调用）
+5. main()  （main 包必须包含 main 函数）
 
 
 
 
 
+Tips：
+
+可以利用空导入，不调用依赖包，但通过依赖的 init 初始化功能，实现初始化
+
+
+
+### init 函数的常用用途
+
+
+
+- 重置包级变量值
+
+- 实现对包级变量的复杂初始化
+
+- 空导入：在 init 函数中实现“注册模式”  （工厂设计模式）
 
 
 
 
 
+## 搞一个 Web 服务
 
+初始化 Go Module
 
+```shell
+go mod init simple-http-server
+```
 
+会自动创建 go.mod 文件：
 
+```
+module simple-http-server
 
+go 1.18
+```
 
+创建一个 main.go
 
+```go
+package main
 
+import "net/http"
 
+func main() {
+	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Write([](byte)("hello,world"))
+	})
+	http.ListenAndServe(":8080", nil)
+}
+```
 
+run 起来后测试：
 
-
-
-
-
-
-
-
-
-
-
-
-
+```shell
+curl localhost:8080/
+```
 
 
 

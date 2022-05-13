@@ -16,6 +16,8 @@ https://time.geekbang.org/course/intro/100024001?tab=catalog
 
 by Tony Bai
 
+超级推荐，由浅入深，循循善诱
+
 /go_language_first_lesson
 
 https://time.geekbang.org/column/intro/100093501?tab=catalog
