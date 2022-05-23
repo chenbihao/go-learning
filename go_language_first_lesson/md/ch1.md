@@ -600,17 +600,68 @@ s2 := string(bs)
 fmt.Println(s2) // 中国人
 ```
 
+性能对比：
+
+```go
+strings.Builder > bytes.Buffer > “+” > fmt.Sprintf
+
+// 确定长度的话可以使用 grows 方法提前申请空间，性能更好
+```
 
 
 
+### 常量
 
+#### const 关键字
 
+只支持基本数据类型（数值、字符串、布尔）
 
+```go
+const Pi float64 = 3.14159265358979323846 // 单行常量声明
 
+// 以const代码块形式声明常量
+const (
+    size int64 = 4096
+    i, j, s = 13, 14, "bar" // 单行声明多个常量
+)
+```
 
+#### 创新
 
+- 无类型常量 + 隐式转型
 
+  ```go
+  type myInt int
+  const n = 13
+  
+  func main() {
+      var a myInt = 5
+      fmt.Println(a + n)  // 输出：18
+  }
+  ```
 
+- 实现枚举（隐式重复前一个非空表达式，iota 偏移量）
+
+  ```go
+  // $GOROOT/src/sync/mutex.go 
+  const ( 
+      mutexLocked = 1 << iota  	// 1 << 0 = 1  
+      mutexWoken					// 1 << 1 = 2
+      mutexStarving				// 1 << 2 = 4
+      mutexWaiterShift = iota		// 3
+      starvationThresholdNs = 1e6	// 1e6
+  )
+  
+  const (
+      _ = iota // iota 从0开始，空白标识符可以跳过
+      Pin1
+      Pin2
+      _
+      Pin4    // 4   
+  )
+  ```
+
+  
 
 
 
