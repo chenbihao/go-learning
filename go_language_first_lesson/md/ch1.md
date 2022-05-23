@@ -610,9 +610,9 @@ strings.Builder > bytes.Buffer > “+” > fmt.Sprintf
 
 
 
-### 常量
+## 常量
 
-#### const 关键字
+### const 关键字
 
 只支持基本数据类型（数值、字符串、布尔）
 
@@ -661,37 +661,129 @@ const (
   )
   ```
 
-  
+
+
+## 同构复合类型
 
 
 
+### 数组
+
+```go
+// T类型 长度N  长度编译时就需要确定
+var arr [N]T
+
+// T N 一致才类型等价
+func foo(arr [5]int) {}
+func main() {
+    var arr1 [5]int
+    var arr2 [6]int
+    var arr3 [5]string
+    
+    foo(arr1) // ok
+    foo(arr2) // 错误：[6]int与函数foo参数的类型[5]int不是同一数组类型
+    foo(arr3) // 错误：[5]string与函数foo参数的类型[5]int不是同一数组类型
+}
+
+// 长度与内存大小（字节）
+var arr = [6]int{1, 2, 3, 4, 5, 6}
+fmt.Println("数组长度：", len(arr))           // 6
+fmt.Println("数组大小：", unsafe.Sizeof(arr)) // 48
+
+// 显式初始化
+var arr2 = [6]int {
+    11, 12, 13, 14, 15, 16,
+} 
+var arr3 = [...]int { 
+    21, 22, 23,
+} 
+fmt.Printf("%T\n", arr3) // [3]int
+
+// 下标赋值
+var arr4 = [...]int{
+    99: 39, // 将第100个元素(下标值为99)的值赋值为39，其余元素值均为0
+}
+fmt.Printf("%T\n", arr4) // [100]int
+```
 
 
 
+### 多维数组
+
+```go
+var mArr [2][3][4]int
+```
 
 
 
+### 切片
+
+数组缺点：固定的元素个数，以及传值机制下导致的开销较大
+
+切片优点：下标访问、边界溢出校验、动态扩容等
+
+```go
+// 初始化  比数据少了个长度
+var nums = []int{1, 2, 3, 4, 5, 6}
+fmt.Println(len(nums)) // 6
+
+nums = append(nums, 7) // 切片变为[1 2 3 4 5 6 7]
+fmt.Println(len(nums)) // 7
+```
+
+实现
+
+```go
+type slice struct {
+    array unsafe.Pointer	// 是指向底层数组的指针
+    len   int				// 长度（当前个数）
+    cap   int				// 底层长度（最大容量）
+}
+```
+
+其他创建切片方式
+
+```go
+// make
+sl := make([]byte, 6, 10) 	// 其中10为cap值，即底层数组长度，6为切片的初始长度
+sl := make([]byte, 6) 		// cap = len = 6
+
+// 基于数组：array[low : high : max]   （相当于一个数组的窗口）
+arr := [10]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+sl := arr[3:7:9]
+
+sl[0] += 10
+fmt.Println("arr[3] =", arr[3]) // 14
+
+// 基于切片创建切片
+s2 := make([]int, len(s1), (cap(s1))*2)
+copy(s2,s1)  // 拷贝s2到s1
+fmt.Printf("len=%d cap=%d slice=%v\n",len(s2),cap(s2),s2)
+```
+
+基于数组：
+
+![image-20220524014002987](ch1.assets/image-20220524014002987.png)
 
 
 
+动态扩容
 
+```go
+var s []int
+s = append(s, 11) 
+fmt.Println(len(s), cap(s)) //1 1
+s = append(s, 12) 
+fmt.Println(len(s), cap(s)) //2 2
+s = append(s, 13) 
+fmt.Println(len(s), cap(s)) //3 4
+s = append(s, 14) 
+fmt.Println(len(s), cap(s)) //4 4
+s = append(s, 15) 
+fmt.Println(len(s), cap(s)) //5 8
+```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+tips：扩容时会分配新的数组，切片会与原数组解除“绑定”，注意别踩坑！
 
 
 
