@@ -20,7 +20,7 @@
 
 - 变量声明块（block）
 
-  ```go
+  ``` go
   var ( 
   	a int = 128 
   	...
@@ -29,13 +29,13 @@
 
 - 一行声明多个变量
 
-  ```go
+  ``` go
   var a, b, c int = 5, 6, 7
   ```
 
 - 以上混合
 
-  ```go
+  ``` go
   var ( 
   	a, b, c int = 5, 6, 7
   	c, d, e rune = 'C', 'D', 'E'
@@ -48,7 +48,7 @@
 
 - 省略类型信息声明
 
-  ```go
+  ``` go
   var b = 13
   // 或者不接受默认类型，进行显示类型转型
   var b = int32(13)
@@ -66,7 +66,7 @@
 
 - 推荐的方式（声明聚类与就近原则，声明一致性）
 
-  ```go
+  ``` go
   // 声明但延迟初始化
   var ( 
   	netGo bool 
@@ -84,7 +84,7 @@
 
 - 推荐的方式
 
-  ```go
+  ``` go
   // 延迟初始化（采用通用声明）
   var err error
   // 显式初始化（采用短变量）
@@ -404,37 +404,201 @@ type MyInt = int32	// 与 int32 完全等价，可以直接相互赋值和运算
 
 
 
+> 非原生问题：需要注意类型安全、防止缓冲区溢出、同步问题、获取长度代价大、非ASCII字符支持
 
 
 
+自带原生字符串类型：string
 
 
 
+优点：
+
+- 数据不可变，提升并发安全性与存储利用率
+- 获取长度时间复杂度为常数级
+- 所见即所得（不会进行转义）
+- 默认采用 Unicode 字符集，UTF-8 编码
 
 
 
+字节序列
+
+```go
+var s = "中国人"
+fmt.Printf("the length of s = %d\n", len(s)) // 9
+
+for i := 0; i < len(s); i++ {
+  fmt.Printf("0x%x ", s[i]) // 0xe4 0xb8 0xad 0xe5 0x9b 0xbd 0xe4 0xba 0xba
+}
+fmt.Printf("\n")
+```
+
+字符序列   （Unicode 字符集的码点）
+
+```go
+var s = "中国人"
+fmt.Println("the character count in s is", utf8.RuneCountInString(s)) // 3
+
+for _, c := range s {
+  fmt.Printf("0x%x ", c) // 0x4e2d 0x56fd 0x4eba
+}
+fmt.Printf("\n")
+```
 
 
 
+#### rune 类型与字符字面值
+
+一个 rune 示例相当于一个 Unicode 字符，等价于 int32 类型
+
+```go
+// 字面值
+'a'  // ASCII字符
+'中' // Unicode字符集中的中文字符
+'\n' // 换行字符
+'\'' // 单引号字符
+
+// Unicode 专用转义字符\u 或\U 作为前缀
+'\u4e2d'     // 字符：中
+'\U00004e2d' // 字符：中
+'\u0027'     // 单引号字符
+
+// 本质是整型数
+'\x27'  // 使用十六进制表示的单引号字符
+'\047'  // 使用八进制表示的单引号字符
+```
 
 
 
+#### 字符串字面值
+
+```go
+"abc\n"
+"中国人"
+"\u4e2d\u56fd\u4eba" // 中国人
+"\U00004e2d\U000056fd\U00004eba" // 中国人
+"中\u56fd\u4eba" // 中国人，不同字符字面值形式混合在一起
+"\xe4\xb8\xad\xe5\x9b\xbd\xe4\xba\xba" // 十六进制表示的字符串字面值：中国人
+```
 
 
 
+实验
+
+```go
+// rune -> []byte
+func encodeRune() { 
+    var r rune = 0x4E2D
+    fmt.Printf("the unicode charactor is %c\n", r) // 中
+    buf := make([]byte, 3)
+    _ = utf8.EncodeRune(buf, r) // 对rune进行utf-8编码
+    fmt.Printf("utf-8 representation is 0x%X\n", buf) // 0xE4B8AD
+} 
+// []byte -> rune 
+func decodeRune() {
+    var buf = []byte{0xE4, 0xB8, 0xAD}         
+    r, _ := utf8.DecodeRune(buf) // 对buf进行utf-8解码
+    fmt.Printf("the unicode charactor after decoding [0xE4, 0xB8, 0xAD] is %s\n", string(r)) // 中
+}
+```
 
 
 
+内部表示
+
+```go
+// $GOROOT/src/reflect/value.go
+
+// StringHeader是一个string的运行时表示
+type StringHeader struct {
+    Data uintptr
+    Len  int
+}
+```
 
 
 
+#### 常见操作
 
+下标操作
 
+```go
+var s = "中国人"
+fmt.Printf("0x%x\n", s[0]) // 0xe4：字符“中” utf-8编码的第一个字节
+```
 
+字符迭代 - 常规 for 迭代
 
+```go
+var s = "中国人"
+for i := 0; i < len(s); i++ {
+  fmt.Printf("index: %d, value: 0x%x\n", i, s[i]) // index: 0, value: 0xe4
+}
+```
 
+字符迭代 - for range 迭代
 
+```go
+var s = "中国人"
+for i, v := range s {
+    fmt.Printf("index: %d, value: 0x%x\n", i, v) // index: 0, value: 0x4e2d
+}
+```
 
+字符串连接
+
+```go
+s := "Rob Pike, "
+s = s + "Robert Griesemer, "
+s += " Ken Thompson"
+fmt.Println(s) // Rob Pike, Robert Griesemer, Ken Thompson
+```
+
+字符串比较 （= =、!= 、>=、<=、> 和 <）
+
+```go
+func main() {
+        s1 := "世界和平"
+        s2 := "世界" + "和平"
+        fmt.Println(s1 == s2) // true
+
+        s1 = "Go"
+        s2 = "C"
+        fmt.Println(s1 != s2) // true
+
+        s1 = "12345"
+        s2 = "23456"
+        fmt.Println(s1 < s2)  // true  只判断第一个就短路返回
+        fmt.Println(s1 <= s2) // true  只判断第一个就短路返回
+
+        s1 = "12345"
+        s2 = "123"
+        fmt.Println(s1 > s2)  // true  判断到第四个才返回
+        fmt.Println(s1 >= s2) // true  判断到第四个才返回
+}
+```
+
+字符串转换（字符串转换有开销，因为 string 是不可变的，需要分配新内存）
+
+```go
+var s string = "中国人"
+                      
+// string -> []rune
+rs := []rune(s) 
+fmt.Printf("%x\n", rs) // [4e2d 56fd 4eba]
+                
+// string -> []byte
+bs := []byte(s) 
+fmt.Printf("%x\n", bs) // e4b8ade59bbde4baba
+                
+// []rune -> string
+s1 := string(rs)
+fmt.Println(s1) // 中国人
+                
+// []byte -> string
+s2 := string(bs)
+fmt.Println(s2) // 中国人
+```
 
 
 
