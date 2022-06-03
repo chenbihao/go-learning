@@ -136,7 +136,9 @@ tips：控制语句隐式代码块：
 ```go
 // 隐式
 if a := 1; false { 
+	
 } else if b := 2; false {
+	
 }
 
 // 转换成显式
@@ -784,6 +786,54 @@ fmt.Println(len(s), cap(s)) //5 8
 ```
 
 tips：扩容时会分配新的数组，切片会与原数组解除“绑定”，注意别踩坑！
+
+
+
+
+
+## 复合数据类型
+
+
+
+### 原生 Map 类型
+
+```go
+// Go 语言中要求，key 的类型必须支持“==”和“!=”两种比较操作符
+map[key_type]value_type
+
+// 在 Go 语言中，函数类型、map 类型自身，以及切片
+// 只支持与 nil 的比较，不支持同类型两个变量的比较
+// 所以函数类型、map 类型自身，以及切片类型是不能作为 map 的 key 类型的
+s := make([]int, 1)			// slice can only be compared to nil
+f := func() {}				// func can only be compared to nil
+m := make(map[int]string)	// map can only be compared to nil
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
