@@ -672,10 +672,10 @@ const (
 ### 数组
 
 ```go
-// T类型 长度N  长度编译时就需要确定
-var arr [N]T
+// T类型 长度L  长度编译时就需要确定
+var arr [L]T
 
-// T N 一致才类型等价
+// T L 一致才类型等价
 func foo(arr [5]int) {}
 func main() {
     var arr1 [5]int
@@ -729,6 +729,7 @@ var mArr [2][3][4]int
 var nums = []int{1, 2, 3, 4, 5, 6}
 fmt.Println(len(nums)) // 6
 
+// “零值可用”（初值为零值 nil 的切片类型变量）
 nums = append(nums, 7) // 切片变为[1 2 3 4 5 6 7]
 fmt.Println(len(nums)) // 7
 ```
@@ -808,6 +809,243 @@ s := make([]int, 1)			// slice can only be compared to nil
 f := func() {}				// func can only be compared to nil
 m := make(map[int]string)	// map can only be compared to nil
 ```
+
+
+
+初始化
+
+```go
+// 初始化
+var m map[string]int // m = nil
+// 无法“零值可用”
+m["key"] = 1 // panic: assignment to entry in nil map
+
+
+// “零值可用”（初值为零值 nil 的 map 类型变量）
+
+// 方法1.复合字面值：
+m := map[int]string{}
+
+m1 := map[int][]string{
+    1: []string{"val1_1", "val1_2"},
+    7: []string{"val7_1"},
+}
+
+type Position struct { 
+    x float64 
+    y float64
+}
+m2 := map[Position]string{
+    Position{29.935523, 52.568915}: "school",
+    Position{73.224455, 111.804306}: "hospital",
+}
+
+// 语法糖：省略字面值中的元素类型
+m2 := map[Position]string{
+    {29.935523, 52.568915}: "school",
+    {73.224455, 111.804306}: "hospital",
+}
+
+// 方法2.使用 make 初始化：
+m1 := make(map[int]string) // 未指定初始容量
+m2 := make(map[int]string, 8) // 指定初始容量为8
+```
+
+
+
+基本操作
+
+```go
+// 插入
+m := make(map[int]string)
+m[1] = "value1"
+
+// 数量	（不能用 cap）
+len(m)   
+
+// 查找	（即使不存在，也会拿到零值）
+v := m["key1"]
+
+// 查找：comma ok 惯用法
+v, ok := m["key1"]if !ok {}
+// 直接判断是否存在
+_, ok := m["key1"]
+
+// 删除
+delete(m, "key2")
+
+// 遍历	（注意：map 是无序的）
+for k, v := range m {}
+for _, v := range m {}
+for k:= range m {}
+```
+
+
+
+#### 实现
+
+![image-20220704165353859](ch1.assets/image-20220704165353859.png)
+
+初始状态	（默认 bucket 为8，在 reflect.go 中定义）
+
+![image-20220704171100592](ch1.assets/image-20220704171100592.png)
+
+哈希处理（tophash 区域）
+
+![image-20220704171333600](ch1.assets/image-20220704171333600.png)
+
+key 存储区域
+
+```go
+// 声明时生成 runtime.maptype 实例，包含所有元信息
+// hash 函数在 maptype.key.alg.hash(key, hmap.hash0)
+type maptype struct {
+    typ        _type
+    key        *_type
+    elem       *_type
+    bucket     *_type // internal type representing a hash bucket
+    keysize    uint8  // size of key slot
+    elemsize   uint8  // size of elem slot
+    bucketsize uint16 // size of bucket
+    flags      uint32
+} 
+```
+
+value 存储区域
+
+![image-20220704172711594](ch1.assets/image-20220704172711594.png)
+
+如果 key 或 value 的数据长度过大，那么运行时不会在 bucket 中直接存储数据，会存储 key 或 value 数据的指针，目前 Go 运行时定义的最大 key 和 value 长度：
+
+```go
+// $GOROOT/src/runtime/map.go
+const (
+    maxKeySize  = 128
+    maxElemSize = 128
+)
+```
+
+map 扩容
+
+```go
+// 扩容判定：count > LoadFactor * 2^B 或 overflow bucket 过多时
+// 1.17 版本 LoadFactor 设置为 6.5（loadFactorNum/loadFactorDen）
+
+// $GOROOT/src/runtime/map.go
+const (
+  ... ...
+
+  loadFactorNum = 13
+  loadFactorDen = 2
+  ... ...
+)
+
+func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
+  ... ...
+  if !h.growing() && (overLoadFactor(h.count+1, h.B) || tooManyOverflowBuckets(h.noverflow, h.B)) {
+    hashGrow(t, h)
+    goto again // Growing the table invalidates everything, so try again
+  }
+  ... ...
+}
+```
+
+overflow bucket 过多时会在 assign 和 delete 时做排空和迁移（2倍扩容）
+
+![image-20220704173440507](ch1.assets/image-20220704173440507.png)
+
+
+
+并发：无并发写保护，1.9引入并发写安全的 [sync.Map](https://pkg.go.dev/sync#Map)
+
+```go
+// 例子
+
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func doIteration(m map[int]int) {
+    for k, v := range m {
+        _ = fmt.Sprintf("[%d, %d] ", k, v)
+    }
+}
+
+func doWrite(m map[int]int) {
+    for k, v := range m {
+        m[k] = v + 1
+    }
+}
+
+func main() {
+    m := map[int]int{
+        1: 11,
+        2: 12,
+        3: 13,
+    }
+
+    go func() {
+        for i := 0; i < 1000; i++ {
+            doIteration(m)
+        }
+    }()
+
+    go func() {
+        for i := 0; i < 1000; i++ {
+            doWrite(m)
+        }
+    }()
+
+    time.Sleep(5 * time.Second)
+}
+
+// 结果：
+fatal error: concurrent map iteration and map write
+```
+
+其他
+
+```go
+// map 的自动扩容会导致 value 地址变化，
+// 所以 Go 不允许获取 map 中 value 的地址
+
+p := &m[key]  // cannot take the address of m[key]
+fmt.Println(p)
+```
+
+```go
+// map 是由 Go 编译器与运行时联合实现的。
+// Go 编译器在编译阶段会将语法层面的 map 操作，重写为运行时对应的函数调用。
+// Go 运行时则采用了高效的算法实现了 map 类型的各类操作
+
+// 如何实现有序的功能：
+// 把key存到有序切片中，用切片遍历
+```
+
+额外的学习链接：[理解 Go Map 的原理](https://draveness.me/golang/docs/part2-foundation/ch03-datastructure/golang-hashmap/)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
