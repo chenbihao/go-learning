@@ -734,7 +734,7 @@ nums = append(nums, 7) // 切片变为[1 2 3 4 5 6 7]
 fmt.Println(len(nums)) // 7
 ```
 
-实现
+实现（内存布局）
 
 ```go
 type slice struct {
@@ -882,7 +882,7 @@ for k:= range m {}
 
 
 
-#### 实现
+#### 实现（内存布局）
 
 ![image-20220704165353859](ch1.assets/image-20220704165353859.png)
 
@@ -1025,19 +1025,219 @@ fmt.Println(p)
 // 把key存到有序切片中，用切片遍历
 ```
 
-额外的学习链接：[理解 Go Map 的原理](https://draveness.me/golang/docs/part2-foundation/ch03-datastructure/golang-hashmap/)
+学习链接：[理解 Go Map 的原理](https://draveness.me/golang/docs/part2-foundation/ch03-datastructure/golang-hashmap/)
 
 
 
 
 
+### 结构体 struct
 
 
 
+定义新类型
+
+```go
+// 定义一个新类型 T，S 可以为原生类型或已有自定义类型
+type T S 
+
+// 底层类型（Underlying Type）用来判断两个类型本质上是否相同（Identical）
+// 本质上相同的两个类型，它们的变量可以通过显式转型进行相互赋值
+type T1 int
+type T2 T1
+type T3 string
+
+func main() {
+    var n1 T1
+    var n2 T2 = 5
+    n1 = T1(n2)  // ok
+    
+    var s T3 = "hello"
+    n1 = T1(s) // 错误：cannot convert s (type T3) to type T1
+}
+
+// 基于字面值定义新类型 + type块定义
+type (
+   M map[int]string
+   S []string
+)
+
+// 使用类型别名（Type Alias）定义新类型，通常用在项目的渐进式重构
+type T = S  // 完全等价
+```
+
+定义结构体类型
+
+```go
+// 定义结构体类型
+type T struct {
+    Field1 T1
+    Field2 T2
+    ... ...
+    FieldN Tn
+}
+
+// 空结构体类型
+type Empty struct{} 
+var s Empty
+println(unsafe.Sizeof(s)) // 内存占用为0
+
+// 空结构体元素作为一种“事件”信息进行 Goroutine 之间的通信
+// 是内存占用最小的 Goroutine 间通信方式
+var c = make(chan Empty) // 声明一个元素类型为Empty的channel
+c<-Empty{}               // 向channel写入一个“事件”
+
+// 嵌套结构体
+type Person struct {
+    Name string
+}
+type Book struct {
+    Title string
+    // Author Person
+    Person  // 嵌入字段（Embedded Field）（匿名字段）
+}
+
+var book Book 
+println(book.Person.Phone) // 将类型名当作嵌入字段的名字
+println(book.Phone)        // 支持直接访问嵌入字段所属类型中字段
+
+// 不可以递归嵌入（invalid recursive type T）
+// 但可以拥有：
+type T struct {
+    t  *T           // 以自身类型的指针类型 ok 
+    st []T          // 以自身类型为元素类型的切片类型 ok
+    m  map[string]T // 以自身类型作为 value 类型的 map 类型的字段 ok
+}     
+```
 
 
 
+零值不可用与零值可用
 
+```go
+// 零值无需初始化即可使用的例子：
+
+var mu sync.Mutex
+mu.Lock()
+mu.Unlock()
+
+var b bytes.Buffer
+b.Write([]byte("Hello, Go"))
+fmt.Println(b.String()) // 输出：Hello, Go
+```
+
+
+
+声明与初始化
+
+```go
+// 声明
+var book Book
+var book = Book{}
+book := Book{}
+
+// 显式初始化 （不推荐，go vet 工具还提供了检测规则 “composites”） 
+var book = Book{"The Go Programming Language", 700, make(map[string]int)}
+
+// 复合字面值初始化（“field:value”形式）未设置的默认零值
+var t = T{
+    F2: "hello",
+    F1: 11,
+}
+
+// 结构体零值
+t := T{}
+// 少用的 new
+tp := new(T)
+
+// 特定的构造函数初始化 （例如在结构体包含未导出字段，并且为零值不可用的时候）
+// 专用构造函数，例如： $GOROOT/src/time/sleep.go
+func NewTimer(d Duration) *Timer {
+    c := make(chan Time, 1)
+    t := &Timer{
+        C: c,
+        r: runtimeTimer{
+            when: when(d),
+            f:    sendTime,
+            arg:  c,
+        },
+    }
+    startTimer(&t.r)
+    return t
+}
+
+```
+
+#### 实现（内存布局）
+
+![image-20220705104534617](ch1.assets/image-20220705104534617.png)
+
+```go
+var t T
+unsafe.Sizeof(t)      // 结构体类型变量占用的内存大小
+unsafe.Offsetof(t.Fn) // 字段Fn在内存中相对于变量t起始地址的偏移量
+```
+
+
+
+填充物（Padding），内存对齐例子：
+
+```go
+type T struct {
+    b byte
+
+    i int64
+    u uint16
+}
+```
+
+![image-20220705104745358](ch1.assets/image-20220705104745358.png)
+
+```go
+// 平铺形式存放在连续内存块中(数组也是)
+
+// 第一阶段：对齐结构体的各个字段
+// 第二阶段：对齐整个结构体
+// 个别处理器无法处理未对齐的数据，x86存取性能会受影响
+
+// 不同顺序也会影响大小
+type T struct {
+    b byte
+    i int64
+    u uint16
+}
+
+type S struct {
+    b byte
+    u uint16
+    i int64
+}
+
+func main() {
+    var t T
+    println(unsafe.Sizeof(t)) // 24
+    var s S
+    println(unsafe.Sizeof(s)) // 16
+}
+```
+
+主动填充，例如 runtime 包中的 mstats
+
+```go
+// $GOROOT/src/runtime/mstats.go
+type mstats struct {
+    ... ...
+    // Add an uint32 for even number of size classes to align below fields
+    // to 64 bits for atomic operations on 32 bit platforms.
+    _ [1 - _NumSizeClasses%2]uint32 // 这里做了主动填充
+
+    last_gc_nanotime uint64 // last gc (monotonic time)
+    last_heap_inuse  uint64 // heap_inuse at mark termination of the previous GC
+    ... ...
+}
+```
+
+学习链接：[struct 内存对齐](https://geektutu.com/post/hpg-struct-alignment.html)
 
 
 
