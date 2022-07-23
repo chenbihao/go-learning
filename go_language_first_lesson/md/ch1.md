@@ -1245,7 +1245,98 @@ type mstats struct {
 
 
 
+## 控制结构：if
 
+
+
+```go
+if boolean_expression1 { 
+    // 分支1
+} if else boolean_expression2 { 
+    // 分支2
+} else { 
+    // 分支3
+}
+
+// 等价于
+
+if boolean_expression1 {
+    // 分支1
+} else {
+    if boolean_expression2 {
+       // 分支2
+    } else { 
+       // 分支3
+    }
+}
+```
+
+
+
+操作符优先级：
+
+![image-20220714172637297](ch1.assets/image-20220714172637297.png)
+
+可以使用带有小括号的子布尔表达式来清晰表达判断条件
+
+
+
+if 语句自用变量
+
+```go
+if a, c := f(), h(); a > 0 {
+    println(a)
+} else if b := f(); b > 0 {
+    println(a, b)
+} else {
+    println(a, b, c)
+}
+```
+
+
+
+“快乐路径（Happy Path）”原则
+
+- 单分支结构
+- 失败立即返回 
+- 成功的逻辑始终“居左”并延续到函数结尾
+- 代码扁平，无深度缩进
+
+
+
+##  控制结构：for
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+```go
+
+```
+
+
+
+```go
+
+```
 
 
 
