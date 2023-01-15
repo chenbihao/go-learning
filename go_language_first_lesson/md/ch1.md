@@ -1588,6 +1588,213 @@ func main() {
 
 
 
+## 控制结构：switch
+
+
+
+### 一般形式
+
+```go
+// initStmt 可选，可用来声明临时变量
+// expr 用来匹配，很灵活，只要类型支持比较都可以使用，例如自定义结构体
+// case expr 执行次序按照顺序执行
+// break：支持表达式列表，分支代码运行结束后即退出switch语句
+// fallthrough 关键字：不退出 switch 语句，直接执行下一个 case（不求值），并且不能放在最后面
+//（“显式”哲学）
+switch initStmt; expr {  
+    case expr1:
+        // 执行分支1
+    case expr2:
+        // 执行分支2
+    case expr3_1, expr3_2, expr3_3:  // 支持表达式列表
+        // 执行分支3
+    case expr4:
+        // 执行分支4
+    	fallthrough // 继续执行下一个 case，不退出
+    case exprN:
+        // 执行分支N
+    default: 
+        // 执行默认分支
+}
+
+// 精简写法：
+
+// 带有 initStmt 语句的 switch 语句
+switch initStmt; {
+    case bool_expr1:
+    ...
+}
+// 没有 initStmt 语句的 switch 语句
+switch {
+    case bool_expr1:
+    ...
+}
+```
+
+
+
+### type switch
+
+```go
+// type switch 里是不能 fallthrough 的
+
+func main() {
+    var x interface{} = 13
+    
+    // 获取动态类型信息
+    // x.(type) 是 switch 语句专有的表达式形式（type guard），而不是初始化语句，所以没有分号
+    // x 必须为接口类型变量 （Go所有类型都实现了该接口）
+    switch x.(type) { 
+    case nil:
+        println("x is nil")
+    case int:
+        println("the type of x is int")
+    case string:
+        println("the type of x is string")
+    case bool:
+        println("the type of x is string")
+    default:
+        println("don't support the type")
+    }
+}
+
+func main() {
+    var x interface{} = 13
+    // 获取值信息
+    switch v := x.(type) {
+    case nil:
+        println("v is nil")
+    case int:
+        println("the type of v is int, v =", v)
+    case string:
+        println("the type of v is string, v =", v)
+    case bool:
+        println("the type of v is bool, v =", v)
+    default:
+        println("don't support the type")
+    }
+}
+
+
+// 特定的接口类型 I
+type I interface {
+	M()
+}
+type T struct {}
+
+func (T) M() {}
+ 
+func main() {
+    var t T
+    var i I = t
+	switch i.(type) {
+	case T:
+		println("it is type T")
+	case int: // 会报错：impossible type switch case
+		println("it is type int")
+	case string:// 会报错：impossible type switch case
+		println("it is type string")
+	}
+}
+```
+
+
+
+Tips：switch 会阻拦 break 语句跳出 for 循环
+
+
+
+### 额外笔记
+
+与 java17 对比
+
+Java17 switch
+
+```java
+String checkWorkday(int day) {
+	return switch (day) {
+		case 1, 2, 3, 4, 5 -> "it is a work day";
+		case 6, 7 -> "it is a weekend day";
+		default -> "are you live on earth";
+	};
+}
+```
+
+Go switch
+
+```go
+func checkWorkday(day int) string {
+	switch day {
+	case 1, 2, 3, 4, 5:
+		return "it is a work day"
+	case 6, 7:
+		return "it is a weekend day"
+	default:
+		return "are you live on earth"
+	}
+}
+```
+
+
+
+
+
+## 函数
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
 ```go
 
 ```
