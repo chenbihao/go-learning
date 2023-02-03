@@ -1743,37 +1743,367 @@ func checkWorkday(day int) string {
 
 
 
+函数是唯一一种基于特定输入，实现特定任务并可返回任务执行结果的代码块
 
+（Go 语言中的方法本质上也是函数，可以说 Go 程序就是一组函数的集合）
+
+
+
+### 函数声明
+
+
+
+普通 Go 函数的声明：
+
+![image-20230131223040607](ch1.assets/image-20230131223040607.png)
+
+等价转换为变量声明：
+
+![image-20230131223048981](ch1.assets/image-20230131223048981.png)
+
+
+
+函数声明中的 **func 关键字**、**参数列表**和**返回值列表**共同构成了**函数类型**
+
+参数列表与返回值列表的组合也被称为**函数签名**
+
+例如上面的Fprintf的函数类型是：`func(io.Writer, string, ...interface{}) (int, error)`
+
+
+
+结论：每个函数声明所定义的函数，仅仅是对应的函数类型的一个实例
+
+（就像 `var a int = 13 `这个变量声明语句中 a 是 int 类型的一个实例一样）
 
 
 
 ```go
-
+s := T{}      // 使用复合类型字面值对结构体类型T的变量进行显式初始化
+f := func(){} // 使用函数字面值（Function Literal）声明形式的函数声明，也叫匿名函数
 ```
 
 
 
 
 
-```go
+### 函数参数
 
+
+
+**形参**（Parameter，形式参数）与 **实参**（Argument，实际参数）
+
+传入的是实参，使用的是形参
+
+![image-20230131223745598](ch1.assets/image-20230131223745598.png)
+
+
+
+当我们实际调用函数的时候，实参会传递给函数，并和形式参数逐一绑定。
+
+编译器会根据各个形参的类型与数量进行匹配校验，校验不通过则报错。
+
+
+
+Go 语言中，函数参数传递采用是**值传递**的方式，
+
+指将实际参数在内存中的表示逐位拷贝（Bitwise Copy）到形式参数中。
+
+整型、数组、结构体内存表示就是它们自身数据，传递的开销成正比。
+
+string、切片、map 内存表示是“描述符”，值传递的是“描述符”，也被称为“浅拷贝”。
+
+
+
+例外：
+
+对于类型为接口类型的形参，Go 编译器会把传递的实参赋值给对应的接口类型形参
+
+对于为变长参数的形参，Go 编译器会将零个或多个实参按一定形式转换为对应的变长形参
+
+
+
+**变长参数**实际上是通过切片来实现的：
+
+```go
+func myAppend(sl []int, elems ...int) []int {
+    fmt.Printf("%T\n", elems) // []int
+    if len(elems) == 0 {
+        println("no elems to append")
+        return sl
+    }
+
+    sl = append(sl, elems...)
+    return sl
+}
+
+func main() {
+    sl := []int{1, 2, 3}
+    sl = myAppend(sl) // no elems to append
+    fmt.Println(sl) // [1 2 3]
+    sl = myAppend(sl, 4, 5, 6)
+    fmt.Println(sl) // [1 2 3 4 5 6]
+}
+```
+
+
+
+### 函数多返回值
+
+
+
+```go
+func foo()                       // 无返回值
+func foo() error                 // 仅有一个返回值
+func foo() (int, string, error)  // 有2或2个以上返回值
+
+func foo() (i int, e error)  	// 具名返回值（Named Return Value）
+```
+
+
+
+Go 标准库以及大多数项目代码中的函数，都选择了使用普通的非具名返回值形式
+
+当函数使用 defer，而且还在 defer 函数中修改外部函数返回值时、
+
+或者当函数的返回值个数较多时，用具名返回值可以让函数实现的可读性更好一些
+
+例如：
+
+```go
+// $GOROOT/src/time/format.go
+func parseNanoseconds(value string, nbytes int) (ns int, rangeErrString string, err error) {
+    if !commaOrPeriod(value[0]) {
+        err = errBad
+        return
+    }
+    if ns, err = atoi(value[1:nbytes]); err != nil {
+        return
+    }
+    if ns < 0 || 1e9 <= ns {
+        rangeErrString = "fractional second"
+        return
+    }
+
+    scaleDigits := 10 - nbytes
+    for i := 0; i < scaleDigits; i++ {
+        ns *= 10
+    }
+    return
+}
 ```
 
 
 
 
 
-```go
+### 函数是“一等公民”
 
+
+
+函数在 Go 语言中属于“一等公民（First-Class Citizen）”。
+
+
+
+wiki 发明人、C2 站点作者沃德·坎宁安 (Ward Cunningham)对“一等公民”的解释：
+
+>   如果一门编程语言对某种语言元素的创建和使用没有限制，我们可以像对待值（value）一样对待这种语法元素，那么我们就称这种语法元素是这门编程语言的“一等公民”。拥有“一等公民”待遇的语法元素可以存储在变量中，可以作为参数传递给函数，可以在函数内部创建并可以作为返回值从函数返回。
+
+
+
+（头等函数是[函数式程序设计](https://zh.m.wikipedia.org/zh-hans/函数式程序设计)所必须的；JS、PHP等语言也支持）
+
+
+
+**特征一：一等公民的语法元素是可以存储在变量中的**
+
+```go
+var (
+    myFprintf = func(w io.Writer, format string, a ...interface{}) (int, error) {
+        return fmt.Fprintf(w, format, a...)
+    }
+)
+func main() {
+    fmt.Printf("%T\n", myFprintf) // func(io.Writer, string, ...interface {}) (int, error)
+    myFprintf(os.Stdout, "%s\n", "Hello, Go") // 输出Hello，Go
+}
+```
+
+
+
+**特征一：支持在函数内创建并通过返回值返回**
+
+```go
+func setup(task string) func() {
+    println("do some setup stuff for", task) 
+    return func() {
+        // 在匿名函数里面用到局部变量 task // 闭包（Closure）
+        // 只要闭包可以被访问，这些共享的变量就会继续存在
+        println("do some teardown stuff for", task) 
+    }
+}
+func main() {
+    teardown := setup("demo")	// 上下文建立（setup）
+    defer teardown()			// 上下文拆除（teardown）
+    println("do some bussiness stuff")
+}
+```
+
+
+
+**特征一：作为参数传入函数**
+
+```go
+time.AfterFunc(time.Second*2, func() { println("timer fired") })
+```
+
+
+
+**特征一：拥有自己的函数类型**
+
+```go
+// $GOROOT/src/net/http/server.go
+type HandlerFunc func(ResponseWriter, *Request)
+
+// $GOROOT/src/sort/genzfunc.go
+type visitFunc func(ast.Node) ast.Visitor
 ```
 
 
 
 
 
-```go
 
+
+
+
+### 函数“一等公民”特性的高效运用
+
+
+
+**应用一：函数可以被显式转型**
+
+
+
+Web Server 的例子
+
+```go
+// 1b. greeting 的函数类型：func(http.ResponseWriter, *http.Request) ，一样
+func greeting(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Welcome, Gopher!\n")
+} 
+
+func main() {
+    // 1c. 直接传入 greeting 会报错：http.ListenAndServe(":8080", greeting)
+    // 报：func(http.ResponseWriter, *http.Request) does not implement http.Handler (missing ServeHTTP method)  函数还没有实现接口 Handler 的方法，无法将它赋值给 Handler 类型的参数
+    http.ListenAndServe(":8080", http.HandlerFunc(greeting))
+}
 ```
+
+ListenAndServe 的源码
+
+```go
+// $GOROOT/src/net/http/server.go
+// ListenAndServe 会把来自客户端的 http 请求，交给它的第二个参数 handler 处理
+func ListenAndServe(addr string, handler Handler) error {
+    server := &Server{Addr: addr, Handler: handler}
+    return server.ListenAndServe()
+}
+```
+
+自定义的接口类型 Handler
+
+```go
+// $GOROOT/src/net/http/server.go
+type Handler interface {
+    // 1a. ServeHTTP 的函数类型：func(http.ResponseWriter, *http.Request)，一样
+    ServeHTTP(ResponseWriter, *Request)  
+}
+```
+
+将函数 greeting 显式转换为 HandlerFunc 类型：http.HandlerFunc
+
+```go
+// $GOROOT/src/net/http/server.go
+
+// 函数类型 func(ResponseWriter, *Request)，并且也有 Handler 接口的 ServeHTTP 方法
+type HandlerFunc func(ResponseWriter, *Request)
+
+// ServeHTTP calls f(w, r).
+func (f HandlerFunc) ServeHTTP(w ResponseWriter, r *Request) {
+        f(w, r)
+}
+```
+
+
+
+与下面整型变量的显式转型原理一样的
+
+```go
+// MyInt的底层类型为int，类比HandlerFunc的底层类型为func(ResponseWriter, *Request)
+type MyInt int
+var x int = 5
+y := MyInt(x) 
+```
+
+
+
+
+
+**应用二：利用闭包简化函数调用**
+
+
+
+```go
+func times(x, y int) int {
+  return x * y
+}
+
+// 一堆高频固定参数的调用
+times(2, 5) // 计算2 x 5
+times(3, 5) // 计算3 x 5
+times(4, 5) // 计算4 x 5
+
+// 简化：
+func partialTimes(x int) func(int) int {
+  return func(y int) int {
+    return times(x, y)
+  }
+}
+
+func main() {
+  timesTwo := partialTimes(2)   // 以高频乘数2为固定乘数的乘法函数
+  timesThree := partialTimes(3) // 以高频乘数3为固定乘数的乘法函数
+  timesFour := partialTimes(4)  // 以高频乘数4为固定乘数的乘法函数
+  fmt.Println(timesTwo(5))   // 10，等价于times(2, 5)
+  fmt.Println(timesTwo(6))   // 12，等价于times(2, 6)
+  fmt.Println(timesThree(5)) // 15，等价于times(3, 5)
+  fmt.Println(timesThree(6)) // 18，等价于times(3, 6)
+  fmt.Println(timesFour(5))  // 20，等价于times(4, 5)
+  fmt.Println(timesFour(6))  // 24，等价于times(4, 6)
+}
+
+// 在那些动辄就有 5 个以上参数的复杂函数中，减少参数的重复输入给开发人员带去的收益，可要比这个简单的例子大得多
+```
+
+
+
+
+
+## 函数：结合多返回值进行错误处理
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
