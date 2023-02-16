@@ -2089,13 +2089,827 @@ func main() {
 
 
 
-## 函数：结合多返回值进行错误处理
+## 函数：**错误处理**设计
+
+
+
+### 错误处理的方式
+
+
+
+C：基于**错误值比较**，一值多用，耦合高
+
+```c
+// stdio.h 
+int fprintf(FILE * restrict stream, const char * restrict format, ...);
+```
+
+Go：**多返回值**机制，解耦
+
+```go
+// fmt包
+// 惯用法：使用 error 这个接口类型表示错误，并且一般放在返回值末尾
+func Fprintf(w io.Writer, format string, a ...interface{}) (n int, err error)
+```
 
 
 
 
 
+### error 类型与错误值构造
 
+
+
+**error 接口**
+
+```go
+// $GOROOT/src/builtin/builtin.go
+type error interface {
+    Error() string
+}
+```
+
+
+
+**提供构造错误值的方法**
+
+```go
+err := errors.New("your first demo error")
+errWithCtx = fmt.Errorf("index %d is out of bounds", i)
+```
+
+返回值 errorString：
+
+```go
+// $GOROOT/src/errors/errors.go
+type errorString struct {
+    s string // 错误上下文（Error Context），仅限于字符串形式
+}
+
+func (e *errorString) Error() string {
+    return e.s
+}
+```
+
+
+
+**自定义错误类型**
+
+```go
+// $GOROOT/src/net/net.go
+type OpError struct {
+    Op string
+    Net string
+    Source Addr
+    Addr Addr
+    Err error
+}
+
+
+// $GOROOT/src/net/http/server.go
+func isCommonNetReadError(err error) bool {
+    if err == io.EOF {
+        return true
+    }
+    if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+        return true
+    }
+    if oe, ok := err.(*net.OpError); ok && oe.Op == "read" {
+        return true
+    }
+    return false
+}
+```
+
+
+
+### 好处
+
+1.   统一错误类型
+2.   错误是值
+3.   易扩展，支持自定义错误上下文
+
+
+
+
+
+### 惯用策略
+
+
+
+#### 策略一：透明错误处理策略
+
+
+
+最常见的错误处理策略，根据错误值进行决策，并选择后续执行路径
+
+```go
+err := doSomething()
+if err != nil {
+    // 不关心err变量底层错误值所携带的具体上下文信息
+    // 执行简单错误处理逻辑并返回
+    ... ...
+    return err
+}
+
+func doSomething(...) error {
+    ... ...
+    return errors.New("some error occurred")
+}
+```
+
+
+
+#### 策略二：“哨兵”错误处理策略
+
+
+
+反模式的错误检视（严重的隐式耦合）：
+
+```go
+data, err := b.Peek(1)
+if err != nil {
+    switch err.Error() {
+    case "bufio: negative count": // 提供字符串比较，严重隐式耦合，并且检视（inspect）性能也差
+        // ... ...
+        return
+    case "bufio: buffer full":
+        // ... ...
+        return
+    case "bufio: invalid use of UnreadByte":
+        // ... ...
+        return
+    default:
+        // ... ...
+        return
+    }
+}
+```
+
+
+
+定义导出（Exported）的 "哨兵" 错误值进行检视（会成为API的一部分，会有依赖，开发者需要维护）：
+
+```go
+// $GOROOT/src/bufio/bufio.go
+var (
+    ErrInvalidUnreadByte = errors.New("bufio: invalid use of UnreadByte")
+    ErrInvalidUnreadRune = errors.New("bufio: invalid use of UnreadRune")
+    ErrBufferFull        = errors.New("bufio: buffer full")
+    ErrNegativeCount     = errors.New("bufio: negative count")
+)
+
+data, err := b.Peek(1)
+if err != nil {
+    switch err {
+    case bufio.ErrNegativeCount:
+        // ... ...
+        return
+    case bufio.ErrBufferFull:
+        // ... ...
+        return
+    case bufio.ErrInvalidUnreadByte:
+        // ... ...
+        return
+    default:
+        // ... ...
+        return
+    }
+}
+```
+
+
+
+从 Go 1.13 版本开始，标准库 errors 包提供了 Is 函数：
+
+```go
+// 类似 if err == ErrOutOfBounds
+// 把一个 error 类型变量与“哨兵”错误值进行比较
+if errors.Is(err, ErrOutOfBounds) {
+    // 越界的错误处理
+}
+
+// 不同的是，如果 error 类型变量的底层错误值是一个包装错误（Wrapped Error），
+// errors.Is 方法会沿着该包装错误所在错误链（Error Chain)，
+// 与链上所有被包装的错误（Wrapped Error）进行比较，直至找到一个匹配的错误为止：
+var ErrSentinel = errors.New("the underlying sentinel error")
+func main() {
+    err1 := fmt.Errorf("wrap sentinel: %w", ErrSentinel)
+    err2 := fmt.Errorf("wrap err1: %w", err1)
+    println(err2 == ErrSentinel) // false
+    if errors.Is(err2, ErrSentinel) {
+        println("err2 is ErrSentinel")
+        return
+    }
+    println("err2 is not ErrSentinel")
+}
+// false
+// err2 is ErrSentinel
+```
+
+
+
+>建议尽量使用 errors.Is 方法去检视某个错误值是否就是某个预期错误值，或者包装了某个特定的“哨兵”错误值。
+
+
+
+#### 策略三：错误值类型检视策略
+
+
+
+需要更多的错误上下文，可以通过自定义错误类型来提供；
+
+错误处理方需要使用 Go 提供的类型断言机制（Type Assertion）或类型选择机制（Type Switch）进行处理：
+
+```go
+// $GOROOT/src/encoding/json/decode.go
+type UnmarshalTypeError struct {
+    Value  string       
+    Type   reflect.Type 
+    Offset int64        
+    Struct string       
+    Field  string      
+}
+
+// $GOROOT/src/encoding/json/decode.go
+func (d *decodeState) addErrorContext(err error) error {
+    if d.errorContext.Struct != nil || len(d.errorContext.FieldStack) > 0 {
+        switch err := err.(type) { // 获取到动态类型和值
+        case *UnmarshalTypeError:
+            err.Struct = d.errorContext.Struct.Name()
+            err.Field = strings.Join(d.errorContext.FieldStack, ".")
+            return err
+        }
+    }
+    return err
+}
+```
+
+
+
+从 Go 1.13 版本开始，标准库 errors 包提供了 As 函数：
+
+```go
+// 类似 if e, ok := err.(*MyError); ok { … }
+var e *MyError
+if errors.As(err, &e) {
+    // 如果err类型为*MyError，变量e将被设置为对应的错误值
+}
+
+// 不同的是，如果 error 类型变量的动态错误值是一个包装错误，
+// errors.As 函数会沿着该包装错误所在错误链，
+// 与链上所有被包装的错误的类型进行比较，直至找到一个匹配的错误类型（就像 errors.Is 函数那样）：
+type MyError struct {
+    e string
+}
+func (e *MyError) Error() string {
+    return e.e
+}
+func main() {
+    var err = &MyError{"MyError error demo"}
+    err1 := fmt.Errorf("wrap err: %w", err)
+    err2 := fmt.Errorf("wrap err1: %w", err1)
+    var e *MyError
+    if errors.As(err2, &e) {
+        println("MyError is on the chain of err2")
+        println(e == err) // true           
+        return                             
+    }                                      
+    println("MyError is not on the chain of err2")
+} 
+
+// MyError is on the chain of err2
+// true
+```
+
+
+
+>   建议尽量使用 errors.As 方法去检视某个错误值是否是某自定义错误类型的实例。
+
+
+
+#### 策略四：错误行为特征检视策略
+
+
+
+但是策略二、策略三 在错误构建方与处理方还是建立了耦合，
+
+可以将某个包中的错误类型归类，统一提取出一些公共的错误行为特征，
+
+并将这些错误行为特征放入一个公开的接口类型中（错误行为特征检视策略）：
+
+（相当于把判断逻辑提取，变成一个充血模型，把判断逻辑交还给本体）
+
+```go
+// $GOROOT/src/net/net.go
+type Error interface {
+    error
+    Timeout() bool  
+    Temporary() bool
+}
+
+// $GOROOT/src/net/http/server.go
+func (srv *Server) Serve(l net.Listener) error {
+    ... ...
+    for {
+        rw, e := l.Accept()
+        if e != nil {
+            select {
+            case <-srv.getDoneChan():
+                return ErrServerClosed
+            default:
+            }
+            if ne, ok := e.(net.Error); ok && ne.Temporary() {
+                // 注：这里对临时性(temporary)错误进行处理
+                ... ...
+                time.Sleep(tempDelay)
+                continue
+            }
+            return e
+        }
+        ...
+    }
+    ... ...
+}
+
+// 在上面代码中，Accept 方法实际上返回的错误类型为*OpError，它是 net 包中的一个自定义错误类型，它实现了错误公共特征接口net.Error，如下代码所示：
+
+// $GOROOT/src/net/net.go
+type OpError struct {
+    ... ...
+    // Err is the error that occurred during the operation.
+    Err error
+}
+
+type temporary interface {
+    Temporary() bool
+}
+
+func (e *OpError) Temporary() bool {
+  if ne, ok := e.Err.(*os.SyscallError); ok {
+      t, ok := ne.Err.(temporary)
+      return ok && t.Temporary()
+  }
+  t, ok := e.Err.(temporary)
+  return ok && t.Temporary()
+}
+```
+
+
+
+>   这些策略都有适用的场合，没有某种单一的错误处理策略可以适合所有项目或所有场合
+>
+>   -   请尽量使用“透明错误”处理策略，降低错误处理方与错误值构造方之间的耦合；
+>   -   如果可以从众多错误类型中提取公共的错误行为特征，那么请尽量使用“错误行为特征检视策略”;
+>   -   在上述两种策略无法实施的情况下，再使用“哨兵”策略和“错误值类型检视”策略；
+>   -   Go 1.13 及后续版本中，尽量用 errors.Is 和 errors.As 函数替换原先的错误检视比较语句。
+
+
+
+
+
+## 函数：让函数更简洁健壮（**panic 与 defer**）
+
+
+
+### 健壮性的“三不要”原则
+
+
+
+原则一：不要相信任何外部输入的参数。（合法性检查）
+
+原则二：不要忽略任何一个错误。（显式检查错误并处理）
+
+原则三：不要假定异常不会发生。（考虑异常捕捉与恢复）
+
+
+
+### Go 语言中的异常：panic
+
+
+
+作用类似于C语言中的断言 assert ，一旦 assert 失败，便会 dump core 文件，程序终止。
+
+无论在哪个 Goroutine 中发生未被恢复的 panic，整个程序都将崩溃退出
+
+
+
+panic 来自于 Go 运行时 或使用 panic 函数主动触发（panicking）
+
+
+
+当函数 F 调用 panic 函数时，函数 F 的执行将停止。不过，函数 F 中已进行求值的 deferred 函数都会得到正常执行，执行完这些 deferred 函数后，函数 F 才会把控制权返还给其调用者
+
+
+
+```go
+func foo() {
+    println("call foo")
+    bar()
+    println("exit foo")
+}
+
+func bar() {
+    println("call bar")
+    panic("panic occurs in bar")
+    zoo()
+    println("exit bar")
+}
+
+func zoo() {
+    println("call zoo")
+    println("exit zoo")
+}
+
+func main() {
+    println("call main")
+    foo()
+    println("exit main")
+}
+
+call main
+call foo
+call bar
+panic: panic occurs in bar
+```
+
+
+
+### 恢复 panic：recover 函数
+
+
+
+```go
+func bar() {
+    defer func() {
+        if e := recover(); e != nil {
+            // 如果 recover 捕捉到 panic，它就会返回以 panic 的具体内容为错误上下文信息的错误值
+            // 如果 panic 被 recover 捕捉到，panic 引发的 panicking 过程就会停止
+            // 如果没有 panic 发生，那么 recover 将返回 nil
+            fmt.Println("recover the panic:", e)
+        }
+    }()
+    println("call bar")
+    panic("panic occurs in bar")
+    zoo()
+    println("exit bar")
+}
+
+call main
+call foo
+call bar
+recover the panic: panic occurs in bar
+exit foo
+exit main
+```
+
+
+
+### 如何应对 panic
+
+
+
+**第一点：评估程序对 panic 的忍受度**
+
+
+不同应用对异常引起的程序崩溃退出的忍受度是不一样的
+
+针对各种应用对 panic 忍受度的差异，我们采取的应对 panic 的策略也应该有不同
+
+
+
+http server 采取局部不影响整体的异常处理策略：
+
+```go
+// $GOROOT/src/net/http/server.go
+// Serve a new connection.
+func (c *conn) serve(ctx context.Context) {
+    c.remoteAddr = c.rwc.RemoteAddr().String()
+    ctx = context.WithValue(ctx, LocalAddrContextKey, c.rwc.LocalAddr())
+    defer func() {
+        if err := recover(); err != nil && err != ErrAbortHandler { // 局部不影响整个服务
+            const size = 64 << 10
+            buf := make([]byte, size)
+            buf = buf[:runtime.Stack(buf, false)]
+            c.server.logf("http: panic serving %v: %v\n%s", c.remoteAddr, err, buf)
+        }
+        if !c.hijacked() {
+            c.close()
+            c.setState(c.rwc, StateClosed, runHooks)
+        }
+    }()
+    ... ...
+}
+```
+
+
+
+**第二点：提示潜在 bug**
+
+
+在 Go 标准库中，大多数 panic 的使用都是充当类似断言的作用的
+
+
+
+encoding/json 包模拟断言对潜在 bug 的提示：
+
+```go
+// $GOROOT/src/encoding/json/decode.go
+... ...
+//当一些本不该发生的事情导致我们结束处理时，phasePanicMsg将被用作panic消息
+//它可以指示JSON解码器中的bug，或者
+//在解码器执行时还有其他代码正在修改数据切片。
+
+const phasePanicMsg = "JSON decoder out of sync - data changing underfoot?"
+
+func (d *decodeState) init(data []byte) *decodeState {
+    d.data = data
+    d.off = 0
+    d.savedError = nil
+    if d.errorContext != nil {
+        d.errorContext.Struct = nil
+        // Reuse the allocated space for the FieldStack slice.
+        d.errorContext.FieldStack = d.errorContext.FieldStack[:0]
+    }
+    return d
+}
+
+func (d *decodeState) valueQuoted() interface{} {
+    switch d.opcode {
+    default:
+        panic(phasePanicMsg) // 走进这个分支的话，则可能是一个 bug
+    case scanBeginArray, scanBeginObject:
+        d.skip()
+        d.scanNext()
+    case scanBeginLiteral:
+        v := d.literalInterface()
+        switch v.(type) {
+        case nil, string:
+            return v
+        }
+    }
+    return unquotedValue{}
+}
+```
+
+
+
+```go
+// $GOROOT/src/encoding/json/encode.go
+func (w *reflectWithString) resolve() error {
+    ... ...
+    switch w.k.Kind() {
+    case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+        w.ks = strconv.FormatInt(w.k.Int(), 10)
+        return nil
+    case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+        w.ks = strconv.FormatUint(w.k.Uint(), 10)
+        return nil
+    }
+    panic("unexpected map key type") // 走出分支的话，则可能是一个 bug
+}
+
+```
+
+
+
+**第三点：不要混淆异常与错误**
+
+
+Java 的checked exception -> 相当于 Go 中的 **error**  （本质是错误处理）
+
+Java 的 RuntimeException + Error  -> 相当于 Go 中的 **panic** （本质是异常，出乎意料的）
+
+
+>   一定不要将 panic 当作错误返回给 API 调用者
+
+
+
+评论中的 tips：
+
+>   Q：panic 无法跨 goroutine 捕获？
+>
+>   A：panic是一个 stack unwinding 的过程，而每个 goroutine 都有自己的执行栈。一个 goroutine 执行栈上发生的 panic，另外一个 goroutine 肯定是不知晓的
+
+
+
+
+
+### 使用 defer 简化函数实现
+
+
+
+defer 是 Go 语言提供的一种**延迟调用机制**（收尾工作），例子：
+
+```go
+func doSomething() error {
+    var mu sync.Mutex
+    mu.Lock()
+    defer mu.Unlock() // 退出时释放锁
+
+    r, err := OpenResource()
+    if err != nil {
+        return err
+    }
+    defer r.Close() // 退出时关闭资源
+   
+    // 使用r...
+    
+    return doWithResources() 
+}
+```
+
+
+
+-   在 Go 中，只有在函数（和方法）内部才能使用 defer；
+
+-   defer 关键字后面只能接函数（或方法），这些函数被称为 deferred 函数。defer 将它们注册到其所在 Goroutine 中，用于存放 deferred 函数的栈数据结构中，这些 deferred 函数将在执行 defer 的函数退出前，按**后进先出（LIFO）**的顺序被程序调度执行（如下图所示）
+-   tips：可以跟踪函数的执行过程
+
+
+
+![image-20230213213542764](ch1.assets/image-20230213213542764.png)
+
+
+
+### defer 使用的注意事项
+
+
+
+**第一点：明确哪些函数可以作为 deferred 函数**
+
+-   有返回值的自定义函数或方法，返回值会被丢弃
+
+-   除了自定义函数或方法，还有内置的或预定义的函数，如：
+
+    ```go
+    Functions:
+      append cap close complex copy delete imag len
+      make new panic print println real recover
+    
+    // defer1.go
+     func main() {
+         var c chan int
+         var sl []int
+         var m = make(map[string]int, 10)
+         m["item1"] = 1
+         m["item2"] = 2
+         var a = complex(1.0, -1.4)
+     
+         var sl1 []int
+         defer append(sl, 11) 	// defer discards result of append(sl, 11)
+         defer cap(sl)  		// defer discards result of cap(sl)
+         defer close(c)
+         defer complex(2, -2) 	// defer discards result of complex(2, -2)
+         defer copy(sl1, sl)
+         defer delete(m, "item2")
+         defer imag(a) 			// defer discards result of imag(a)
+         defer len(sl) 			// defer discards result of len(sl)
+         defer make([]int, 10) 	// defer discards result of make([]int, 10)
+         defer new(*int) 		// defer discards result of new(*int)
+         defer panic(1)
+         defer print("hello, defer\n")
+         defer println("hello, defer")
+         defer real(a) 			// defer discards result of real(a)
+         defer recover()
+         
+         defer func() {
+          _ = append(sl, 11) 	// 可以使用一个包裹它的匿名函数来间接满足要求
+        }()
+     }
+    
+    // append、cap、len、make、new、imag 等内置函数都是不能直接作为 deferred 函数的
+    // close、copy、delete、print、recover 等内置函数则可以直接被 defer 设置为 deferred 函数
+    ```
+
+
+
+
+
+**第二点：注意 defer 关键字后面表达式的求值时机**
+
+defer 关键字后面的表达式，是在将 deferred 函数注册到 deferred 函数栈的时候进行求值的。
+
+```go
+func foo1() {
+    for i := 0; i <= 2; i++ {
+        defer fmt.Println(i)
+    }
+    // 依次压入 deferred 函数栈的函数是：
+    // fmt.Println(0)
+	// fmt.Println(1)
+	// fmt.Println(2)
+    
+    // 按照 LIFO 次序出栈运行：
+    // 2
+    // 1
+    // 0
+}
+
+func foo2() {
+    for i := 0; i <= 2; i++ {
+        defer func(n int) {
+            fmt.Println(n)
+        }(i)
+    }    
+    // 依次压入 deferred 函数栈的函数是：
+    // func(0)
+	// func(1)
+	// func(2)
+    
+    // 按照 LIFO 次序出栈运行：
+    // 2
+    // 1
+    // 0
+}
+
+func foo3() {
+    for i := 0; i <= 2; i++ {
+        defer func() {
+            fmt.Println(i) // 闭包
+        }()
+    }    
+    // 依次压入 deferred 函数栈的函数是：
+    // func()
+	// func()
+	// func()
+    
+    // 按照 LIFO 次序出栈运行：
+    // 3
+    // 3
+    // 3
+}
+
+func main() {
+    foo1()
+    foo2()
+    foo3()
+}
+```
+
+
+
+**第三点：知晓 defer 带来的性能损耗**
+
+
+
+```go
+// defer_test.go
+package main
+import "testing"
+
+func sum(max int) int {
+    total := 0
+    for i := 0; i < max; i++ {
+        total += i
+    }
+    return total
+}
+
+func fooWithDefer() {
+    defer func() {
+        sum(10)
+    }()
+}
+func fooWithoutDefer() {
+    sum(10)
+}
+
+func BenchmarkFooWithDefer(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+        fooWithDefer()
+    }
+}
+func BenchmarkFooWithoutDefer(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+        fooWithoutDefer()
+    }
+}
+
+// Go 1.13 之后的版本，如 Go 1.12.7 ，差距 8 倍左右：
+$go test -bench . defer_test.go
+goos: darwin
+goarch: amd64
+BenchmarkFooWithDefer-8        30000000          42.6 ns/op
+BenchmarkFooWithoutDefer-8     300000000           5.44 ns/op
+PASS
+ok    command-line-arguments  3.511s
+
+// Go 1.13 之后的版本，如 Go 1.17 ，几乎可以忽略不计的程度：
+$go test -bench . defer_test.go
+goos: darwin
+goarch: amd64
+BenchmarkFooWithDefer-8        194593353           6.183 ns/op
+BenchmarkFooWithoutDefer-8     284272650           4.259 ns/op
+PASS
+ok    command-line-arguments  3.472s
+```
+
+
+
+
+
+## 方法：理解“方法”的本质
 
 
 
@@ -2117,12 +2931,6 @@ func main() {
 
 
 
-```go
-
-```
-
-
-
 
 
 ```go
@@ -2133,9 +2941,65 @@ func main() {
 
 
 
+
+
 ```go
 
 ```
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
+
+
+
+```go
+
+```
+
+
+
+
 
 
 
