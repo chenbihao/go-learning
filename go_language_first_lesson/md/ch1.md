@@ -2909,22 +2909,1063 @@ ok    command-line-arguments  3.472s
 
 
 
-## 方法：理解“方法”的本质
+## **方法（method）**的本质
+
+
+
+### 一般声明形式
+
+![image-20230222212757884](ch1.assets/image-20230222212757884.png)
+
+
+
+receiver 参数：方法必须归属一个类型
+
+```go
+//  【*T或T】称为基类型，只能有一个 receiver 参数
+func (t *T或T) MethodName(参数列表) (返回值列表) {
+    // 方法体
+}
+
+// 方法接收器（receiver）参数、函数 / 方法参数，以及返回值变量对应的作用域范围，
+// 都是函数 / 方法体对应的显式代码块
+type T struct{}
+func (t T) M(t string) { // 编译器报错：duplicate argument t (重复声明参数t)
+    ... ...
+}
+```
+
+
+
+receiver 参数的基类型本身不能为指针类型或接口类型
+
+```go
+
+
+
+type MyInt *int
+func (r MyInt) String() string { // r的基类型为MyInt，编译器报错：invalid receiver type MyInt (MyInt is a pointer type)
+    return fmt.Sprintf("%d", *(*int)(r))
+}
+
+type MyReader io.Reader
+func (r MyReader) Read(p []byte) (int, error) { // r的基类型为MyReader，编译器报错：invalid receiver type MyReader (MyReader is an interface type)
+    return r.Read(p)
+}
+```
+
+
+
+方法声明要与 receiver 参数的基类型声明放在同一个包内
+
+```go
+// 第一个推论：我们不能为原生类型（诸如 int、float64、map 等）添加方法
+
+func (i int) Foo() string { // 编译器报错：cannot define new methods on non-local type int
+    return fmt.Sprintf("%d", i) 
+}
+
+// 第二个推论：不能跨越 Go 包为其他包的类型声明新方法
+
+import "net/http"
+
+func (s http.Server) Foo() { // 编译器报错：cannot define new methods on non-local type http.Server
+}
+```
+
+
+
+### 调用方式
+
+可以通过 *T 或 T 的变量实例调用该方法
+
+```go
+
+type T struct{}
+
+func (t T) M(n int) {
+}
+
+func main() {
+    var t T
+    t.M(1) // 通过类型T的变量实例调用方法M
+
+    p := &T{}
+    p.M(2) // 通过类型*T的变量实例调用方法M
+}
+```
 
 
 
 
 
+### 方法的本质是什么？
 
 
 
-
-
+方法本质上也是函数
 
 
 
 ```go
+type T struct { 
+    a int // 可以为原生类型定义方法
+}
+func (t T) Get() int {  
+    return t.a 
+}
+func (t *T) Set(a int) int { 
+    t.a = a 
+    return t.a 
+}
 
+// 等价转换:
+
+// 类型T的方法Get的等价函数
+func Get(t T) int {  
+    return t.a 
+}
+
+// 类型*T的方法Set的等价函数
+func Set(t *T, a int) int { 
+    t.a = a 
+    return t.a 
+}
+```
+
+
+
+>   C++ 中的对象在调用方法时，编译器会自动传入指向对象自身的 this 指针作为方法的第一个参数
+>
+>   Go 方法中将 receiver 参数以第一个参数的身份并入到方法的参数列表中，由 Go 编译器在编译和生成代码时自动完成
+
+
+
+#### 方法表达式（Method Expression）
+
+```go
+// 类型 T 只能调用 T 的方法集合（Method Set）中的方法，
+// 同理类型 *T 也只能调用 *T 的方法集合中的方法
+
+var t T
+t.Get()
+(&t).Set(1)
+
+// 等价替换:
+
+var t T
+T.Get(t)
+(*T).Set(&t, 1)
+```
+
+
+
+>   Method Expression 有些类似于 C++ 中的静态方法（Static Method）
+>
+>   C++ 中的静态方法在使用时，以该 C++ 类的某个对象实例作为第一个参数，
+>
+>   而 Go 语言的 Method Expression 在使用时，同样以 receiver 参数所代表的类型实例作为第一个参数
+
+
+
+Go 语言中的方法的本质就是，一个以方法的 receiver 参数作为第一个参数的普通函数
+
+```go
+// 方法自身的类型就是一个普通函数的类型，我们甚至可以将它作为右值，赋值给一个函数类型的变量
+var t T
+f1 := (*T).Set // f1的类型，也是*T类型Set方法的类型：func (t *T, int)int
+f2 := T.Get    // f2的类型，也是T类型Get方法的类型：func(t T)int
+fmt.Printf("the type of f1 is %T\n", f1) // the type of f1 is func(*main.T, int) int
+fmt.Printf("the type of f2 is %T\n", f2) // the type of f2 is func(main.T) int
+f1(&t, 3)
+fmt.Println(f2(t)) // 3
+```
+
+
+
+### 巧解难题
+
+问题代码：
+
+```go
+package main
+import (
+    "fmt"
+    "time"
+)
+type field struct {
+    name string
+}
+func (p *field) print() {
+    fmt.Println(p.name)
+}
+func main() {
+    data1 := []*field{{"one"}, {"two"}, {"three"}}
+    for _, v := range data1 {
+        go v.print()
+    }
+    data2 := []field{{"four"}, {"five"}, {"six"}}
+    for _, v := range data2 {
+        go v.print()
+    }
+    time.Sleep(3 * time.Second)
+}
+
+// 输出 （具体需要看 goroutine 的调度）
+one
+two
+three
+six
+six
+six
+```
+
+利用 Method Expression 方式，等价变换：
+
+```go
+type field struct {
+    name string
+}
+func (p *field) print() {
+    fmt.Println(p.name)
+}
+func main() {
+    data1 := []*field{{"one"}, {"two"}, {"three"}}
+    for _, v := range data1 {
+        // 每次传入指针地址
+        go (*field).print(v) 
+    }
+    data2 := []field{{"four"}, {"five"}, {"six"}}
+    for _, v := range data2 {
+        // 与 print 的 receiver 参数类型不同，因此需要将其取地址后再传入 (*field).print 函数。
+        // 这样每次传入的 &v 实际上是变量 v 的地址
+        // 详见 #循环变量的重用
+        go (*field).print(&v) 
+    }
+    time.Sleep(3 * time.Second)
+}
+
+// 修改后：
+type field struct {
+    name string
+}
+func (p field) print() { // receiver 类型由 *field 改为 field
+    fmt.Println(p.name)
+}
+func main() {
+    data1 := []*field{{"one"}, {"two"}, {"three"}}
+    for _, v := range data1 {
+        go v.print()
+    }
+    data2 := []field{{"four"}, {"five"}, {"six"}}
+    for _, v := range data2 {
+        go v.print()
+    }
+    time.Sleep(3 * time.Second)
+}
+
+// 输出
+one
+two
+three
+four
+five
+six
+```
+
+
+
+### Q&A
+
+>   Q：go方法的本质是一个以方法的 receiver 参数作为第一个参数的普通函数 函数是第一等公民，那大家都写函数就行了，方法存在的意义是啥呢？
+>
+>   A：你这个问题很好👍。 
+>
+>   我可以将其转换为另外一个几乎等价的问题：我们知道c++的方法(成员函数)本质就是以编译器插入的一个this指针作为首个参数的普通函数。那么大家为什么不直接用c的函数，非要用面向对象的c++呢？
+>
+>   其实你的问题本质上是一个编程范式演进的过程。Go类型+方法(类比于c++的类+方法)和oo范式一样，是一种“封装”概念的实现，即隐藏自身状态，仅提供方法供调用者对其状态进行正确改变操作，防止其他事物对其进行错误的状态改变操作。
+
+
+
+
+
+## 方法集合与如何选择 receiver 类型
+
+
+
+Go 方法实质上是以方法的 receiver 参数作为第一个参数的普通函数
+
+```go
+// 等价转换：
+func (t T) M1() <=> F1(t T) 	// 值拷贝传递，t 是 T 类型实例的副本
+func (t *T) M2() <=> F2(t *T) 	// *T 类型实例,t 是 T 类型实例的地址
+```
+
+
+
+选择不同类型对原类型实例的影响
+
+```go
+package main
+  
+type T struct {
+    a int
+}
+func (t T) M1() {
+    t.a = 10
+}
+func (t *T) M2() {
+    t.a = 11
+}
+
+func main() {
+    var t T
+    println(t.a) // 0
+
+    t.M1()
+    println(t.a) // 0
+
+    p := &t
+    p.M2()
+    println(t.a) // 11
+}
+```
+
+
+
+### 选择 receiver 参数类型的原则
+
+
+
+**原则一：**
+
+要把对 receiver 参数代表的类型**实例的修改**，反映到原类型实例上，**选择 *T** 作为 receiver 参数的类型。
+
+```go
+type T struct {
+	a int
+}
+func (t T) M1() {
+	t.a = 10
+}
+func (t *T) M2() {
+	t.a = 11
+}
+ 
+// Go 编译器会自动转换，
+// 所以无论是 T 类型实例，还是 *T 类型实例，
+// 都既可以调用 receiver 为 T 类型的方法，
+// 也可以调用 receiver 为 *T 类型的方法：
+func main() {
+	var t1 T
+	println(t1.a) // 0
+	t1.M1()
+	println(t1.a) // 0
+	t1.M2()					// Go 编译器自动转换（将t1.M2()转换为(&t1).M2()）
+	println(t1.a) // 11
+ 
+	var t2 = &T{}
+	println(t2.a) // 0
+	t2.M1() 				// Go 编译器自动转换（将t2.M1()转换为(*t2).M1()）
+	println(t2.a) // 0
+	t2.M2()
+	println(t2.a) // 11
+}
+```
+
+
+
+**原则二：**
+
+
+
+尽量**减少暴露**可以修改类型内部状态的方法，不需要在方法中对类型实例进行修改时，**选择 T 类型**。
+
+
+
+**原则三：**
+
+
+
+根据方法集合原理，聚焦于这个类型与接口类型间的耦合关系。
+
+
+
+如果 T 类型需要**实现某个接口**，就使用 T 类型，T 不需要实现某接口，但 *T 需要，则参考原则一二即可。
+
+
+
+```go
+// 如果 T 类型需要实现某个接口的含义，
+
+var i I 	// 一个接口类型I
+var t T		// 一个自定义非接口类型T
+i = t		// 希望这段代码是OK的
+
+// 如果是*T实现了I，那么不能保证T也会实现I（因为*T的方法有可能更多）。
+// 所以我们在设计一个自定义类型T的方法时，考虑是否T需要实现某个接口。
+// 如果需要，方法receiver参数的类型应该是T。如果T不需要，那么用*T或T就都可以了。
+```
+
+
+
+>方法接收者类型选择三个原则
+>
+>1.   如果需要修改接收者本身，传指针 *T 
+>
+>2.   如果接受者本身较为复杂，传指针 *T，避免拷贝
+>
+>3.   *T的方法集合是包含 T 的方法集合。
+>		 *T 范围更大 
+>
+>go 文档不推荐混合使用，一般还是用 T* 吧。除非明确需要不改动 T 本身
+
+
+
+一个方法集合的例子：
+
+```go
+type Interface interface {
+    M1()
+    M2()
+}
+
+type T struct{}
+
+func (t T) M1()  {}
+func (t *T) M2() {}
+
+func main() {
+    var t T
+    var pt *T
+    dumpMethodSet(t)
+    dumpMethodSet(pt)
+    
+    var i Interface
+    i = pt
+    i = t // cannot use t (type T) as type Interface in assignment: T does not implement Interface (M2 method has pointer receiver)
+}
+
+// 输出
+
+main.T's method set:
+- M1
+
+*main.T's method set:
+- M1
+- M2
+```
+
+
+
+### 方法集合（Method Set）
+
+
+
+方法集合是用来判断一个类型是否实现了某接口类型的唯一手段
+
+```go
+func dumpMethodSet(i interface{}) {
+    dynTyp := reflect.TypeOf(i)
+
+    if dynTyp == nil {
+        fmt.Printf("there is no dynamic type\n")
+        return
+    }
+
+    n := dynTyp.NumMethod()
+    if n == 0 {
+        fmt.Printf("%s's method set is empty!\n", dynTyp)
+        return
+    }
+
+    fmt.Printf("%s's method set:\n", dynTyp)
+    for j := 0; j < n; j++ {
+        fmt.Println("-", dynTyp.Method(j).Name)
+    }
+    fmt.Printf("\n")
+}
+
+
+type T struct{}
+
+func (T) M1() {}
+func (T) M2() {}
+
+func (*T) M3() {}
+func (*T) M4() {}
+
+func main() {
+    var n int
+    dumpMethodSet(n)
+    dumpMethodSet(&n)
+
+    var t T
+    dumpMethodSet(t)
+    dumpMethodSet(&t)
+}
+
+// 输出
+
+int's method set is empty!		// Go 原生类型由于没有定义方法，方法集合是空的
+*int's method set is empty!		// Go 原生类型由于没有定义方法，方法集合是空的
+
+// 自定义类型 T 定义了方法 M1 和 M2
+main.T's method set:
+- M1
+- M2
+
+// *T 类型的方法集合包含所有以 *T ，以及所有以 T 为 receiver 参数类型的方法
+*main.T's method set:	
+- M1
+- M2
+- M3
+- M4
+```
+
+
+
+### Q&A
+
+```go
+type T struct{}
+func (T) M1()
+func (T) M2()
+
+// S 类型包含哪些方法？   *S 类型又包含哪些方法？
+type S T
+
+// 答：
+// S 类型 和 *S 类型都没有包含方法，因为type S T 定义了一个新类型。
+// 但是如果用 type S = T 则S和*S类型都包含两个方法
+```
+
+
+
+
+
+## 用**类型嵌入**模拟实现“继承”
+
+
+
+**类型嵌入（Type Embedding）**：
+
+-   接口类型的类型嵌入
+-   结构体类型的类型嵌入
+
+
+
+### 接口类型的类型嵌入
+
+
+```go
+// 接口类型声明了由一个方法集合代表的接口
+// 如果某个类型实现了方法 M1 和 M2，我们就说这个类型实现了 E 所代表的接口
+type E interface {	
+    M1()
+    M2()
+}
+
+// 等价 I ：
+type I interface {
+    M1()
+    M2()
+    M3()
+}
+type I interface {
+    E 	// 会将嵌入的接口类型（如接口类型 E）的方法集合，并入到自己的方法集合中。（惯用法）
+    M3()
+}
+```
+
+
+
+Go 标准库中的例子
+
+```go
+// $GOROOT/src/io/io.go
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+type Closer interface {
+    Close() error
+}
+
+type ReadWriter interface {
+    Reader
+    Writer
+}
+type ReadCloser interface {
+    Reader
+    Closer
+}
+type WriteCloser interface {
+    Writer
+    Closer
+}
+type ReadWriteCloser interface {
+    Reader
+    Writer
+    Closer
+}
+```
+
+
+
+Go 1.14 版本之前是有约束的，嵌入的接口类型的方法集合不能有交集：
+
+Go 1.14 版本开始就[去除了这个限制](https://go-review.googlesource.com/c/go/+/190378)，变为并集(union)
+
+```go
+type Interface1 interface {
+    M1()
+}
+type Interface2 interface {
+    M1()
+    M2()
+}
+type Interface3 interface {
+    Interface1
+    Interface2 // Error: duplicate method M1
+}
+type Interface4 interface {
+    Interface2
+    M2() // Error: duplicate method M2
+}
+func main() {
+}
+```
+
+
+
+
+
+### 结构体类型的类型嵌入
+
+```go
+type S struct {
+    A int
+    b string
+    c T
+    p *P
+    _ [10]int8
+    F func()
+}
+
+// 带有嵌入字段（Embedded Field）的结构体定义 
+type T1 int
+type t2 struct{
+    n int
+    m int
+}
+type I interface {
+    M1()
+}
+type S1 struct {
+    T1			// T1、t2、I 既代表字段的名字，也代表字段的类型
+    *t2
+    I            
+    a int
+    b string
+}
+```
+
+
+
+和 receiver 的基类型一样，嵌入字段类型的底层类型**不能为指针类型**
+
+用法：
+
+```go
+type MyInt int
+func (n *MyInt) Add(m int) {
+    *n = *n + MyInt(m)
+}
+
+type t struct {
+    a int
+    b int
+}
+type S struct {
+    *MyInt
+    t
+    io.Reader	// 规定如果结构体使用从其他包导入的类型作为嵌入字段，名字为不带包名
+    s string
+    n int
+}
+
+func main() {
+    m := MyInt(17)
+    r := strings.NewReader("hello, go")
+    s := S{
+        MyInt: &m,
+        t: t{
+            a: 1,
+            b: 2,
+        },
+        Reader: r,	// 例如这里的 Reader
+        s:      "demo",
+    }
+    
+    var sl = make([]byte, len("hello, go"))
+    s.Reader.Read(sl)
+    fmt.Println(string(sl)) // hello, go
+    s.MyInt.Add(5)
+    fmt.Println(*(s.MyInt)) // 22
+}
+```
+
+
+
+也可以利用组合思想实现继承功能
+
+```go
+// Go 发现结构体类型 S 自身并没有定义 Read 方法，
+// 于是 Go 会查看 S 的嵌入字段对应的类型是否定义了 Read 方法
+// 嵌入字段 Reader 的 Read 方法就被提升为 S 的方法，放入了类型 S 的方法集合
+
+var sl = make([]byte, len("hello, go"))
+s.Read(sl)  // 结构体类型 S“继承”了 Reader 字段的方法 Read 的实现
+fmt.Println(string(sl))
+s.Add(5) 	// 也“继承”了 *MyInt 的 Add 方法的实现
+fmt.Println(*(s.MyInt))
+```
+
+
+
+更具体点，它是一种组合中的代理（delegate）模式
+
+![image-20230223214541687](ch1.assets/image-20230223214541687.png)
+
+
+
+### 类型嵌入与方法集合
+
+
+
+结构体类型中嵌入接口类型
+
+```go
+type I interface {
+    M1()
+    M2()
+}
+type T struct {
+    I
+}
+func (T) M3() {}
+
+func main() {
+    var t T
+    var p *T
+    dumpMethodSet(t)
+    dumpMethodSet(p)
+}
+
+// 输出    
+// 结构体类型的方法集合，包含嵌入的接口类型的方法集合。
+main.T's method set: 
+- M1
+- M2
+- M3
+
+*main.T's method set:
+- M1
+- M2
+- M3
+```
+
+
+
+当结构体嵌入的多个接口类型的方法集合存在交集时，也有可能出现错误提示，因为编译器出现了分歧
+
+```go
+type E1 interface {
+	M1()
+	M2()
+	M3()
+}
+type E2 interface {
+	M1()
+	M2()
+	M4()
+}
+type T struct {
+	E1
+	E2
+}
+func main() {
+	t := T{}
+	t.M1()
+	t.M2()
+}
+
+// 输出
+
+main.go:22:3: ambiguous selector t.M1
+main.go:23:3: ambiguous selector t.M2
+
+// 解决方案：
+
+type T struct {
+    E1
+    E2
+}
+
+func (T) M1() { println("T's M1") }
+func (T) M2() { println("T's M2") }
+
+func main() {
+    t := T{}
+    t.M1() // T's M1
+    t.M2() // T's M2
+}
+```
+
+
+
+妙用：简化单元测试的编写
+
+```go
+package employee
+  
+type Result struct {
+    Count int
+}
+func (r Result) Int() int { return r.Count }
+
+type Rows []struct{}
+
+type Stmt interface {
+    Close() error
+    NumInput() int
+    Exec(stmt string, args ...string) (Result, error)
+    Query(args []string) (Rows, error)
+}
+
+// 返回男性员工总数
+func MaleCount(s Stmt) (int, error) {
+    result, err := s.Exec("select count(*) from employee_tab where gender=?", "1")
+    if err != nil {
+        return 0, err
+    }
+
+    return result.Int(), nil
+}
+```
+
+单元测试：
+
+```go
+package employee
+import "testing"
+
+type fakeStmtForMaleCount struct {
+    Stmt
+}
+func (fakeStmtForMaleCount) Exec(stmt string, args ...string) (Result, error) {
+    return Result{Count: 5}, nil
+}
+
+func TestEmployeeMaleCount(t *testing.T) {
+    f := fakeStmtForMaleCount{}
+    c, _ := MaleCount(f)
+    if c != 5 {
+        t.Errorf("want: %d, actual: %d", 5, c)
+        return
+    }
+}
+```
+
+
+
+### 结构体类型中嵌入结构体类型
+
+
+
+无论是 T 类型的变量实例还是 *T 类型变量实例，都可以调用所有“继承”的方法
+
+但带有嵌入类型的新类型究竟“继承”了哪些方法？
+
+```go
+type T1 struct{}
+func (T1) T1M1()   { println("T1's M1") }
+func (*T1) PT1M2() { println("PT1's M2") }
+
+type T2 struct{}
+func (T2) T2M1()   { println("T2's M1") }
+func (*T2) PT2M2() { println("PT2's M2") }
+
+type T struct {
+    T1
+    *T2
+}
+
+func main() {
+    t := T{
+        T1: T1{},
+        T2: &T2{},
+    }
+    dumpMethodSet(t)
+    dumpMethodSet(&t)
+}
+
+// 输出
+
+// 类型 T 的方法集合 = T1 的方法集合 + *T2 的方法集合
+main.T's method set:
+- PT2M2
+- T1M1
+- T2M1
+
+// 类型 *T 的方法集合 = *T1 的方法集合 + *T2 的方法集合
+*main.T's method set:
+- PT1M2
+- PT2M2
+- T1M1
+- T2M1
+```
+
+
+
+### defined 类型与 alias 类型的方法集合
+
+
+
+基于自定义非接口类型的 **defined 类型**的方法集合为空，没有“继承”这一隐式关联
+
+
+
+defined 语法：
+
+```go
+type I interface {
+    M1()
+    M2()
+}
+type T int
+type NT T // 基于已存在的类型T创建新的defined类型NT
+type NI I // 基于已存在的接口类型I创建新defined接口类型NI
+```
+
+defined 例子：
+
+```go
+package main
+
+type T struct{}
+func (T) M1()  {}
+func (*T) M2() {}
+
+type T1 T // defined 
+
+func main() {
+  var t T
+  var pt *T
+  var t1 T1
+  var pt1 *T1
+
+  dumpMethodSet(t)
+  dumpMethodSet(t1)
+  dumpMethodSet(pt)
+  dumpMethodSet(pt1)
+}
+
+// 输出
+
+main.T's method set:
+- M1
+
+main.T1's method set is empty!
+
+*main.T's method set:
+- M1
+- M2
+
+*main.T1's method set is empty!
+```
+
+
+
+
+
+基于**类型别名（type alias）**定义的新类型，都与原类型拥有完全相同的方法集合
+
+例子：
+
+```go
+type T struct{}
+func (T) M1()  {}
+func (*T) M2() {}
+
+type T1 = T // type alias
+
+func main() {
+    var t T
+    var pt *T
+    var t1 T1
+    var pt1 *T1
+
+    dumpMethodSet(t)
+    dumpMethodSet(t1)
+
+    dumpMethodSet(pt)
+    dumpMethodSet(pt1)
+}
+
+// 输出  // 输出的都是原类型的方法集合
+
+main.T's method set:
+- M1
+
+main.T's method set:
+- M1
+
+*main.T's method set:
+- M1
+- M2
+
+*main.T's method set:
+- M1
+- M2
+```
+
+
+
+### Q&A
+
+
+
+``` go
+// Q：S1 S2 是否等价？
+type T1 int
+type t2 struct{
+    n int
+    m int
+}
+type I interface {
+    M1()
+}
+
+type S1 struct { 
+    T1			// “语法糖”，无需再在外层结构上重新定义方法并代理给内部字段
+    *t2
+    I
+    a int
+    b string
+}
+type S2 struct { 
+    T1 T1		// 能力上讲没有本质区别，只是需要在外层封一层方法，然后调用字段对应的方法
+    t2 *t2
+    I  I
+    a  int
+    b  string
+}
+
+// A：不等价，S2 结构体没有代理嵌入类型方法
 ```
 
 
@@ -2933,9 +3974,6 @@ ok    command-line-arguments  3.472s
 
 
 
-```go
-
-```
 
 
 
@@ -2943,71 +3981,6 @@ ok    command-line-arguments  3.472s
 
 
 
-```go
-
-```
-
-
-
-
-
-
-
-```go
-
-```
-
-
-
-
-
-
-
-```go
-
-```
-
-
-
-
-
-
-
-```go
-
-```
-
-
-
-
-
-
-
-```go
-
-```
-
-
-
-
-
-
-
-```go
-
-```
-
-
-
-
-
-
-
-
-
-```go
-
-```
 
 
 
