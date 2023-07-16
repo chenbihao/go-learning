@@ -2,8 +2,6 @@
 
 # 基础
 
-
-
 ## 变量声明
 
 
@@ -2940,9 +2938,6 @@ func (t T) M(t string) { // 编译器报错：duplicate argument t (重复声明
 receiver 参数的基类型本身不能为指针类型或接口类型
 
 ```go
-
-
-
 type MyInt *int
 func (r MyInt) String() string { // r的基类型为MyInt，编译器报错：invalid receiver type MyInt (MyInt is a pointer type)
     return fmt.Sprintf("%d", *(*int)(r))
@@ -2960,15 +2955,12 @@ func (r MyReader) Read(p []byte) (int, error) { // r的基类型为MyReader，�
 
 ```go
 // 第一个推论：我们不能为原生类型（诸如 int、float64、map 等）添加方法
-
 func (i int) Foo() string { // 编译器报错：cannot define new methods on non-local type int
     return fmt.Sprintf("%d", i) 
 }
 
 // 第二个推论：不能跨越 Go 包为其他包的类型声明新方法
-
 import "net/http"
-
 func (s http.Server) Foo() { // 编译器报错：cannot define new methods on non-local type http.Server
 }
 ```
@@ -2980,7 +2972,6 @@ func (s http.Server) Foo() { // 编译器报错：cannot define new methods on n
 可以通过 *T 或 T 的变量实例调用该方法
 
 ```go
-
 type T struct{}
 
 func (t T) M(n int) {
@@ -3004,8 +2995,6 @@ func main() {
 
 
 方法本质上也是函数
-
-
 
 ```go
 type T struct { 
@@ -3046,13 +3035,11 @@ func Set(t *T, a int) int {
 ```go
 // 类型 T 只能调用 T 的方法集合（Method Set）中的方法，
 // 同理类型 *T 也只能调用 *T 的方法集合中的方法
-
 var t T
 t.Get()
 (&t).Set(1)
 
 // 等价替换:
-
 var t T
 T.Get(t)
 (*T).Set(&t, 1)
@@ -3972,6 +3959,41 @@ type S2 struct {
 
 
 
+## 跟踪函数调用链，理解代码更直观
+
+
+
+复习：defer 的运作机制，Go 会在 defer 设置 deferred 函数时对 defer 后面的表达式进行求值  
+
+
+
+```go
+func Trace(name string) func() {
+	println("enter:", name)
+	return func() {
+		println("exit:", name)
+	}
+}
+func foo() {
+	defer Trace("foo")()
+	bar()
+}
+func bar() {
+	defer Trace("bar")()
+}
+
+func main() {
+	defer Trace("main")()
+	foo()
+}
+// 输出
+enter: main
+enter: foo
+enter: bar
+exit: bar
+exit: foo
+exit: main
+```
 
 
 
@@ -3981,6 +4003,23 @@ type S2 struct {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 用户故事｜罗杰：我的Go语言学习之路
 
 
 
