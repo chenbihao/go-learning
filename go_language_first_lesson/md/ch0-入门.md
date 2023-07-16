@@ -78,7 +78,7 @@
 
 `go help environment` 可查看详情
 
-![img](ch0.assets/ba6990798fb17fc18386749f9cce2c96-16522622361942.jpg)
+![img](ch0-入门.assets/ba6990798fb17fc18386749f9cce2c96-16522622361942.jpg)
 
 Tips：
 
@@ -265,7 +265,7 @@ Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的
 
 语义版本规范：
 
-![img](ch0.assets/468323b3294cce2ea7f4c1da3699c5a2.png)
+![img](ch0-入门.assets/468323b3294cce2ea7f4c1da3699c5a2.png)
 
 机制：
 
@@ -282,7 +282,7 @@ Q：项目所依赖的包有很多版本，Go Module 是如何选出最适合的
 
 ### Go 各版本构建模式机制和切换
 
-![image-20220511180337754](ch0.assets/image-20220511180337754.png)
+![image-20220511180337754](ch0-入门.assets/image-20220511180337754.png)
 
 
 
