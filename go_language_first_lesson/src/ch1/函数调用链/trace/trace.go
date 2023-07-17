@@ -2,7 +2,7 @@ package main
 
 func Trace(name string) func() {
 	println("enter:", name)
-	return func() {
+	return func() { // 闭包函数
 		println("exit:", name)
 	}
 }
