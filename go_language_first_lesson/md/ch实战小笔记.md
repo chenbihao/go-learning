@@ -36,7 +36,6 @@ panic 无法跨 goroutine 捕获
 
 #### 结构体的值传递问题
 
-
 ```go
 // (u LoginUser) 是值传递，方法内只收到了副本，所以外面的对象没收到值
 func (u LoginUser) GetOriginHeaderByHttp(req *http.Request) (err error) {
@@ -50,11 +49,42 @@ func (u *LoginUser) GetOriginHeaderByHttp(req *http.Request) (err error) {
 }
 ```
 
-
-
 #### 值拷贝
 
 go是值传递，包括 range
+
+
+#### for指针
+
+```go
+var all []*Item
+for _, item := range items {
+    all = append(all, &item) // 会取最后一个值
+}
+
+// 正确写法：
+for _, item := range items {
+    item := item
+    all = append(all, &item)
+}
+```
+
+```go
+var prints []func()
+for _, v := range []int{1, 2, 3} {
+    prints = append(prints, func() { fmt.Println(v) })
+}
+for _, print := range prints {
+    print()
+}
+
+// 正确写法：
+for _, v := range []int{1, 2, 3} {
+    v := v
+    prints = append(prints, func() { fmt.Println(v) })
+}
+```
+
 
 #### 切片指针
 
