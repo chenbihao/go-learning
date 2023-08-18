@@ -97,6 +97,9 @@ for _, v := range []int{1, 2, 3} {
 map 的自动扩容会导致 value 地址变化，所以 Go 不允许获取 map 中 value 的地址
 
 
+#### 空指针
+
+nil error 值 != nil
 
 ### 并发问题
 
