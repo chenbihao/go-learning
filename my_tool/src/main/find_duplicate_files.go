@@ -7,11 +7,12 @@ import (
 	"sort"
 )
 
-func formatKB(bytes int64) string {
-	kb := (bytes + 1023) / 1024 // 使用整数除法并四舍五入
-	return fmt.Sprintf("%d KB", kb)
+func main() {
+	rootDir := `Q:\其他\文件\`
+	findDuplicateFiles(rootDir)
 }
 
+// 查找重复文件
 func findDuplicateFiles(rootDir string) {
 	fileSizeMap := make(map[int64][]string)
 
@@ -55,7 +56,7 @@ func findDuplicateFiles(rootDir string) {
 	}
 }
 
-func main() {
-	rootDir := `Q:\其他\文件\`
-	findDuplicateFiles(rootDir)
+func formatKB(bytes int64) string {
+	kb := (bytes + 1023) / 1024 // 使用整数除法并四舍五入
+	return fmt.Sprintf("%d KB", kb)
 }
