@@ -7,6 +7,7 @@ import (
 	"sort"
 )
 
+// 查找重复文件
 func main() {
 	rootDir := `Q:\其他\文件\`
 	findDuplicateFiles(rootDir)

@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// 遍历并输出目录
 func main() {
 	// 指定要遍历的目录
 	rootDir := `Q:\其他\文件\`
