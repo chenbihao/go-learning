@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"go/ast"
@@ -12,18 +13,15 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 )
 
-// 生成gob的md文件
+// 生成 gob 的 md 文件
 func main() {
-	rootDir := `D:\dev-project\0.demo\go-learning\my_tool\src\main\gen`
-	rootDir, _ = filepath.Abs("./my_tool/src/main/gen")
+	rootDir, _ := filepath.Abs("./my_tool/src/main/gen")
 	genGobDocs(rootDir)
 }
 
 func genGobDocs(path string) {
-
 	// get packages
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, path, nil, parser.ParseComments)
@@ -33,16 +31,16 @@ func genGobDocs(path string) {
 	}
 
 	// 开始创建文件夹
-	genPath := filepath.Join(path, fmt.Sprintf("gen-%d", time.Now().Unix()))
-	if err := os.Mkdir(genPath, 0700); err != nil {
-		fmt.Println("创建文件夹出错:", err)
+	genPath := filepath.Join(path, fmt.Sprintf("gen"))
+	if err = CreateFolderIfNotExists(genPath); err != nil {
+		fmt.Println("创建文件 出错:", err)
 		return
 	}
 
 	for _, pkg := range pkgs {
-		for _, astFile := range pkg.Files {
-			var key, code string
-			readme := strings.TrimPrefix(astFile.Doc.List[0].Text, "/*")
+		for filePath, astFile := range pkg.Files {
+			var key, readme, code string
+			readme = strings.TrimPrefix(astFile.Doc.List[0].Text, "/*")
 			readme = strings.TrimSuffix(readme, "*/")
 
 			for _, v := range astFile.Scope.Objects {
@@ -53,19 +51,20 @@ func genGobDocs(path string) {
 				if v.Kind == ast.Typ {
 					d := v.Decl.(*ast.TypeSpec)
 
-					// 考虑是否能把源代码截取原文处理
-
-					buffer := bytes.NewBufferString("")
-					if err = astToGo(buffer, d); err != nil {
+					// 把源代码截取原文处理
+					code, err = astToGo2(filePath, fset, d)
+					if err != nil {
 						fmt.Println("astToGo 出错:", err)
 						return
 					}
-					code = "```go " + buffer.String() + " ```"
+					code = "```go \n" + code + "\n```"
 				}
 			}
 
-			filePath := filepath.Join(genPath, "aaa.md")
-			file, err := os.Create(filePath)
+			fileName := filepath.Base(filePath)
+			fileName = strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			genFilePath := filepath.Join(genPath, fileName+".md")
+			file, err := os.Create(genFilePath)
 			if err != nil {
 				fmt.Println("创建文件出错:", err)
 				return
@@ -108,5 +107,54 @@ func astToGo(buffer *bytes.Buffer, node interface{}) error {
 		return err
 	}
 	addNewline()
+	return nil
+}
+
+func astToGo2(filePath string, fset *token.FileSet, d *ast.TypeSpec) (s string, err error) {
+	pos := fset.Position(d.Type.Pos())
+	end := fset.Position(d.Type.End())
+
+	f, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
+	if err != nil {
+		return s, err
+	}
+	defer f.Close()
+
+	buf := make([]byte, 1024*4)
+	f.Read(buf)
+	reader := bufio.NewReader(bytes.NewReader(buf))
+
+	sb := strings.Builder{}
+	for i := 1; i <= end.Line; i++ {
+		line, _, _ := reader.ReadLine()
+		if i >= pos.Line {
+			sb.Write(line)
+			if i != end.Line {
+				sb.Write([]byte("\n"))
+			}
+		}
+	}
+	return sb.String(), nil
+}
+
+// 判断所给路径文件/文件夹是否存在
+func Exists(path string) bool {
+	// os.Stat 获取文件信息
+	if _, err := os.Stat(path); err != nil {
+		if os.IsExist(err) {
+			return true
+		}
+		return false
+	}
+	return true
+}
+
+// 如果不存在，则创建文件夹
+func CreateFolderIfNotExists(folder string) error {
+	if !Exists(folder) {
+		if err := os.MkdirAll(folder, os.ModePerm); err != nil {
+			return err
+		}
+	}
 	return nil
 }
