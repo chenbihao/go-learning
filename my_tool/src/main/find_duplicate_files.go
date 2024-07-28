@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-// 查找重复文件
+// 查找重复文件（文件大小相同，没做md5之类的计算）
 func main() {
 	rootDir := `Q:\其他\文件\`
 	findDuplicateFiles(rootDir)
