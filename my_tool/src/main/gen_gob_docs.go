@@ -15,7 +15,7 @@ import (
 	"text/template"
 )
 
-// 生成 gob 的 md 文件
+// 生成 gob 的 md 文件 (已转移到gob项目中)
 func main() {
 	rootDir, _ := filepath.Abs("./my_tool/src/main/gen")
 	genGobDocs(rootDir)
