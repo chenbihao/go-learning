@@ -37,17 +37,18 @@ const (
 - 多种重命名格式（替换、前缀、后缀）
 - todo：
 - 初始版本名称回滚等操作
-- 翻译字符预估
+- 屏蔽某些文件： ".DS_Store"、".xxxx"
+- 屏蔽某些文件夹： "__MACOSX"
 - 支持自定义字典、自定义保留不翻译文本
-- 检测是否已翻译
+- 翻译字符预估、检测是否已翻译
 */
 func main() {
 
 	// 指定要遍历的目录
 	rootDir := `D:\DevProjects\TempFile`
 
-	onlyPreview := true
-	onlyFileNotDir := true
+	onlyPreview := false
+	onlyFileNotDir := false
 	depth := 10
 	renameStrategy := rename_suffix
 	backupStrategy := backup_non
